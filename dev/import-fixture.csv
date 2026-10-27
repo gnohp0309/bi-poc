@@ -1,0 +1,9 @@
+date,region,category,amount,quantity
+2025-01-01,Miền Bắc,Điện tử,100,2
+2025-01-03,Miền Nam,Gia dụng,200,1
+2025-02-01,Miền Bắc,Điện tử,150,3
+2025-02-04,Miền Trung,Gia dụng,invalid,1
+2025-03-01,Miền Nam,Điện tử,250,2
+2025-03-08,Miền Bắc,,50,1
+bad-date,Miền Trung,Văn phòng,300,1
+2025-03-10,Miền Nam,Gia dụng,,1
