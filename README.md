@@ -2,7 +2,7 @@
 
 Phiên bản thử nghiệm để chứng minh một luồng BI cơ bản: **đưa dữ liệu vào → kiểm tra và truy vấn → tạo biểu đồ → trình bày trên dashboard**. Đây là ứng dụng chạy trên máy của người thử nghiệm, không phải website đã triển khai trên Internet hay sản phẩm sẵn sàng dùng với dữ liệu thật.
 
-Mã nguồn gồm Spring Boot (API), React/TypeScript (giao diện), ECharts (biểu đồ) và PostgreSQL (dữ liệu). [Slide báo cáo POC](demo/Bao_cao_PoC_BI_Dashboard.pptx) và [CSV để thử](demo/doanh_thu_poc.csv) có sẵn trong repo.
+Mã nguồn gồm Spring Boot (API), React/TypeScript (giao diện), ECharts (biểu đồ) và PostgreSQL (dữ liệu). [CSV để thử](demo/doanh_thu_poc.csv) có sẵn trong repo.
 
 ## Hai luồng có thể thử
 
