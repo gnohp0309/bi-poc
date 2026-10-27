@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$bin = 'C:\Program Files\PostgreSQL\18\bin'
+. (Join-Path $PSScriptRoot 'postgres-bin.ps1')
+$bin = Resolve-PostgresBin -Root $root
 $backupDir = Join-Path $root '.local\backups'
 New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 

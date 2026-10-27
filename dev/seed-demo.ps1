@@ -13,10 +13,20 @@ if (-not ($users | Where-Object { $_.username -eq 'analyst' })) { Call 'POST' '/
 if (-not ($users | Where-Object { $_.username -eq 'viewer' })) { Call 'POST' '/users' @{ username = 'viewer'; password = 'Demo2026!'; role = 'VIEWER' } | Out-Null }
 $existing = Call 'GET' '/dashboards' $null | Where-Object { $_.name -eq 'Tổng quan bán hàng 2025' }
 if ($existing) { Write-Host 'Demo dashboard already exists.'; exit 0 }
-$connection = Call 'POST' '/connections' @{ name = 'PostgreSQL · Bán hàng mẫu'; host = '127.0.0.1'; port = 5433; database = 'bi_poc_source'; username = 'bi_reader'; password = 'Reader2026!' }
-$orders = Call 'POST' '/datasets' @{ connectionId = $connection.id; name = 'Đơn hàng 2025'; kind = 'PHYSICAL'; sourceName = 'public.orders' }
-Call 'PUT' "/datasets/$($orders.id)/aliases" @{ aliases = @{ region = 'Vùng'; category = 'Danh mục'; amount = 'Doanh thu'; order_date = 'Ngày đặt' } } | Out-Null
-$months = Call 'POST' '/datasets' @{ connectionId = $connection.id; name = 'Doanh thu theo tháng'; kind = 'VIRTUAL'; sql = "SELECT to_char(order_date, 'YYYY-MM') AS month, amount FROM public.orders" }
+$connection = Call 'GET' '/connections' $null | Where-Object { $_.name -eq 'PostgreSQL · Bán hàng mẫu' -and $_.database_name -eq 'bi_poc_source' } | Select-Object -First 1
+if (-not $connection) {
+  $connection = Call 'POST' '/connections' @{ name = 'PostgreSQL · Bán hàng mẫu'; host = '127.0.0.1'; port = 5433; database = 'bi_poc_source'; username = 'bi_reader'; password = 'Reader2026!' }
+}
+$datasets = Call 'GET' '/datasets' $null
+$orders = $datasets | Where-Object { $_.connection_id -eq $connection.id -and $_.kind -eq 'PHYSICAL' -and $_.source_name -eq 'public.orders' } | Select-Object -First 1
+if (-not $orders) {
+  $orders = Call 'POST' '/datasets' @{ connectionId = $connection.id; name = 'Đơn hàng 2025'; kind = 'PHYSICAL'; sourceName = 'public.orders' }
+  Call 'PUT' "/datasets/$($orders.id)/aliases" @{ aliases = @{ region = 'Vùng'; category = 'Danh mục'; amount = 'Doanh thu'; order_date = 'Ngày đặt' } } | Out-Null
+}
+$products = $datasets | Where-Object { $_.connection_id -eq $connection.id -and $_.kind -eq 'PHYSICAL' -and $_.source_name -eq 'public.products' } | Select-Object -First 1
+if (-not $products) { Call 'POST' '/datasets' @{ connectionId = $connection.id; name = 'Sản phẩm mẫu'; kind = 'PHYSICAL'; sourceName = 'public.products' } | Out-Null }
+$months = $datasets | Where-Object { $_.connection_id -eq $connection.id -and $_.kind -eq 'VIRTUAL' -and $_.name -eq 'Doanh thu theo tháng' } | Select-Object -First 1
+if (-not $months) { $months = Call 'POST' '/datasets' @{ connectionId = $connection.id; name = 'Doanh thu theo tháng'; kind = 'VIRTUAL'; sql = "SELECT to_char(order_date, 'YYYY-MM') AS month, amount FROM public.orders" } }
 $region = Call 'POST' '/charts' @{ datasetId = $orders.id; name = 'Doanh thu theo vùng'; chartType = 'bar'; dimension = 'region'; metric = 'amount'; aggregate = 'sum' }
 $category = Call 'POST' '/charts' @{ datasetId = $orders.id; name = 'Tỷ trọng theo danh mục'; chartType = 'pie'; dimension = 'category'; metric = 'amount'; aggregate = 'sum' }
 $month = Call 'POST' '/charts' @{ datasetId = $months.id; name = 'Xu hướng doanh thu tháng'; chartType = 'line'; dimension = 'month'; metric = 'amount'; aggregate = 'sum' }

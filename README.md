@@ -1,113 +1,110 @@
-# BI Dashboard POC
+# Pythera Data Studio — BI Dashboard POC
 
-Bản demo để trình bày hai luồng: **CSV → phân tích chất lượng/số liệu → dashboard tự động** và **PostgreSQL → dataset → SQL/biểu đồ → dashboard**. Backend dùng Spring Boot 3.5, frontend dùng React + TypeScript + ECharts 6, dữ liệu cấu hình và file nhập được lưu trong PostgreSQL. Đây là bản chạy cục bộ, chưa phải hệ thống triển khai thật.
+Phiên bản thử nghiệm để chứng minh một luồng BI cơ bản: **đưa dữ liệu vào → kiểm tra và truy vấn → tạo biểu đồ → trình bày trên dashboard**. Đây là ứng dụng chạy trên máy của người thử nghiệm, không phải website đã triển khai trên Internet hay sản phẩm sẵn sàng dùng với dữ liệu thật.
 
-## Chạy trên máy này
+Mã nguồn gồm Spring Boot (API), React/TypeScript (giao diện), ECharts (biểu đồ) và PostgreSQL (dữ liệu). [Slide báo cáo POC](demo/Bao_cao_PoC_BI_Dashboard.pptx) và [CSV để thử](demo/doanh_thu_poc.csv) có sẵn trong repo.
 
-Máy đã có Java 17, Maven, Node.js và PostgreSQL 18. Mở PowerShell tại thư mục `bi-poc`, chạy một lệnh:
+## Hai luồng có thể thử
+
+```mermaid
+flowchart LR
+  CSV["File CSV"] --> Import["Tải file & phân tích"]
+  Import --> Quality["Số dòng, ô trống, sai kiểu"]
+  Import --> Uploads["Bảng PostgreSQL / dataset"]
+  Uploads --> Auto["Biểu đồ & dashboard tự động"]
+  PG["Bảng PostgreSQL có sẵn"] --> Connect["Kết nối dữ liệu"]
+  Connect --> Dataset["Dataset vật lý hoặc SQL ảo"]
+  Dataset --> Lab["SQL Lab"]
+  Dataset --> Builder["Chart Builder"]
+  Builder --> Dashboard["Dashboard: sắp xếp, lọc, chia sẻ"]
+  Auto --> Dashboard
+```
+
+- **CSV:** nhập file UTF-8; hệ thống suy kiểu, báo ô trống/sai kiểu, lưu thành bảng trong schema `uploads`, rồi tạo dataset, biểu đồ và dashboard.
+- **PostgreSQL:** kết nối database có bảng sẵn; chọn bảng vật lý hoặc viết một câu `SELECT` làm dataset ảo; chạy SQL, tự cấu hình biểu đồ và thêm vào dashboard.
+
+## Chạy từ bản clone trên Windows
+
+**Cần cài trước:** Git, JDK 17, Maven, PostgreSQL 18 và Node.js `^20.19.0` hoặc `>=22.12.0`. Các lệnh `git`, `java`, `mvn` và `npm` phải dùng được trong CMD/PowerShell. Cần có mạng ở lần đầu để Maven và npm tải thư viện. Cổng **8081** (web) và **5433** (PostgreSQL riêng của POC) phải còn trống. Quy trình này đã được kiểm tra trên Windows với Java 17, Maven 3.9, Node 22 và PostgreSQL 18.
+
+Mở PowerShell hoặc CMD:
 
 ```powershell
+git clone https://github.com/gnohp0309/bi-poc.git
+cd bi-poc
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\start-demo.ps1
 ```
 
-Trong **CMD**, chạy `cd /d D:\SE01C\TT\ThucTap\bi-poc` rồi dùng đúng lệnh `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\start-demo.ps1` ở trên.
+**Lần chạy đầu**, script tự chạy `npm ci`, build giao diện, đóng gói Spring Boot, tạo PostgreSQL cục bộ trong `.local/pgdata`, rồi mở ứng dụng ở [http://127.0.0.1:8081/](http://127.0.0.1:8081/). Chạy lại sẽ dùng dữ liệu đã có; không tự xóa hoặc nạp dữ liệu mẫu. Repo không chứa `node_modules`, file JAR hay database của máy tác giả.
 
-Script tạo cụm PostgreSQL riêng trong `.local/pgdata` tại `127.0.0.1:5433`, hai CSDL `bi_poc_app` và `bi_poc_source`, tài khoản chỉ đọc `bi_reader`, rồi chạy file `.jar` ở chế độ nền. **Lần khởi động mới không tự nạp đơn hàng hoặc dashboard mẫu** để bạn có thể thử từ màn hình trống. Chạy lại không xóa dữ liệu bạn đã nhập. Nó không thay đổi dịch vụ PostgreSQL đang có trên cổng 5432.
-
-Nếu muốn xem log ứng dụng trực tiếp, thay lệnh trên bằng `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\setup-postgres.ps1`, rồi chạy:
+Nếu PostgreSQL không nằm trong `PATH` hoặc `C:\Program Files\PostgreSQL\<phiên bản>\bin`, đặt `POC_POSTGRES_BIN` trước khi chạy, ví dụ:
 
 ```powershell
-cd .\backend
-java -jar .\target\bi-poc-0.1.0.jar
+$env:POC_POSTGRES_BIN = 'D:\Tools\PostgreSQL\18\bin'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\start-demo.ps1
 ```
 
-Mở [http://127.0.0.1:8081/](http://127.0.0.1:8081/). Nếu **muốn chủ động nạp dữ liệu PostgreSQL mẫu** để thử luồng kết nối database, khi backend đã lên hãy mở terminal khác tại thư mục `bi-poc` và chạy:
-
-```powershell
-pwsh -NoProfile -File .\dev\seed-demo.ps1
-```
-
-Script này nạp bảng `orders`/`products`, tạo kết nối chỉ đọc, dataset vật lý/ảo, truy vấn lưu, ba biểu đồ và dashboard “Tổng quan bán hàng 2025”. Chạy lại không tạo trùng dashboard. Khi sửa mã giao diện, build lại bằng `npm run build` trong `frontend`, sau đó `mvn -q -DskipTests package` trong `backend` để tạo file `.jar` mới.
-
-Để **xóa dữ liệu demo và thử nhập lại từ đầu**, chạy ở thư mục `bi-poc`:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\reset-demo.ps1
-```
-
-Lệnh này sao lưu hai database vào `.local/backups`, xóa file nhập, các bảng đã nhập, kết nối, dataset, truy vấn, biểu đồ, dashboard, nhóm và nhật ký; giữ các tài khoản `admin`, `analyst`, `viewer`. Sau đó nó khởi động lại web ở trạng thái trống. File CSV trên ổ đĩa và mã nguồn vẫn được giữ nguyên.
-
-| Tài khoản | Mật khẩu | Vai trò |
+| Tài khoản thử | Mật khẩu | Quyền |
 | --- | --- | --- |
-| `admin` | `Demo2026!` | Quản trị, xem nhật ký |
-| `analyst` | `Demo2026!` | Tạo kết nối, dataset, truy vấn, biểu đồ, dashboard |
+| `admin` | `Demo2026!` | Quản trị, nhật ký |
+| `analyst` | `Demo2026!` | Tạo/sửa nội dung |
 | `viewer` | `Demo2026!` | Chỉ xem |
 
-Mật khẩu của kết nối dữ liệu mẫu trong biểu mẫu là `Reader2026!`. Tất cả thông tin đăng nhập trên chỉ dùng cho dữ liệu giả lập cục bộ. Không mở cổng ra mạng hoặc dùng dữ liệu thật trước khi đổi mật khẩu, khóa mã hóa và thiết kế lại cơ chế bảo mật.
+Các mật khẩu trên là **mật khẩu mẫu công khai**. Ứng dụng mặc định chỉ nghe trên `127.0.0.1`; chỉ dùng dữ liệu giả lập và không mở cổng ra mạng khi chưa thay cấu hình bảo mật.
 
-## Kịch bản trình bày 5–7 phút
+## Thử luồng CSV trong 3–5 phút
 
-1. Đăng nhập `admin`; trang **Tổng quan** ban đầu có 0 kết nối, 0 dataset, 0 biểu đồ và 0 dashboard.
-2. Vào **Tải file & phân tích**. Chọn `demo/doanh_thu_poc.csv`, đặt tên “Doanh thu bán hàng mẫu 2025” và bấm **Nhập file và tạo dashboard**.
-3. Đối chiếu kết quả: **12 dòng**, **2 ô trống**, **2 ô sai kiểu**, tổng `doanh_thu` **9.700.000**. Hai ô sai kiểu và quy tắc chuyển thành `NULL` được nêu trong bảng kết quả.
-4. Bấm **Mở dashboard**. Hệ thống tạo biểu đồ cột theo `khu_vuc`, tròn theo `danh_muc`, đường theo tháng. Chọn chiều lọc `c_khu_vuc`, nhập `Miền Bắc`, bấm **Áp dụng**: biểu đồ khu vực còn **3.600.000**.
-5. Vào **Kết nối dữ liệu** và **Datasets** để xem bảng CSV đã được nhập vào PostgreSQL. Dùng **Chart Builder** tạo thêm biểu đồ từ dataset này nếu muốn chứng minh luồng thủ công. Để chạy câu SQL mẫu `public.orders` trong **SQL Lab**, chọn kết nối **PostgreSQL · Bán hàng mẫu** tới `bi_poc_source`.
-6. Vào **Bảo mật & nhật ký** để xem thao tác nhập; có thể đăng nhập `viewer` để xác nhận tài khoản này không được tải file. Chỉ chạy `dev/seed-demo.ps1` nếu muốn trình bày thêm luồng nguồn PostgreSQL mẫu.
+1. Đăng nhập `admin`, vào **Tải file & phân tích**, chọn `demo/doanh_thu_poc.csv`, đặt tên “Doanh thu bán hàng mẫu 2025”, bấm **Nhập file và tạo dashboard**.
+2. Đối chiếu kết quả: **12 dòng**, **2 ô trống**, **2 ô sai kiểu**, tổng `doanh_thu` **9.700.000**. Ô sai kiểu thành `NULL` nhưng dòng vẫn được giữ.
+3. Bấm **Mở dashboard**. Chọn chiều lọc `c_khu_vuc`, nhập `Miền Bắc`, bấm **Áp dụng**; biểu đồ theo khu vực cho **3.600.000**.
+4. Vào **Kết nối dữ liệu** → **Xem bảng** và **Datasets** → **Xem trước** để thấy file đã trở thành bảng `uploads.csv_...` trong PostgreSQL. Tên bảng có mã mới sau mỗi lần tải; không dùng tên bảng cũ trong SQL đã lưu.
+5. Vào **Chart Builder**, chọn dataset CSV, biểu đồ **Cột**, chiều `c_khu_vuc`, phép **Tổng**, chỉ số `c_doanh_thu`. Xem trước rồi lưu và thêm vào dashboard.
 
-## Phạm vi đã làm và giới hạn
+Muốn thử lại từ bước tải file, dùng **Xóa lần nhập** trên trang nhập file. Thao tác này xóa bảng, dataset và dashboard tạo từ lần nhập ấy. Kết nối CSV vẫn có thể còn trong danh sách.
 
-| Phân hệ | Đã thể hiện trong POC | Chưa làm/giới hạn |
+## Thử luồng PostgreSQL có sẵn
+
+Sau khi web chạy, mở terminal khác trong thư mục repo và nạp dữ liệu mẫu:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\seed-demo.ps1
+```
+
+Script tạo `bi_poc_source.public.orders` (24 dòng), `public.products` (7 dòng), kết nối **PostgreSQL · Bán hàng mẫu**, dataset, ba biểu đồ và dashboard “Tổng quan bán hàng 2025”. Trong **SQL Lab**, chọn đúng kết nối này rồi chạy:
+
+```sql
+SELECT to_char(order_date, 'YYYY-MM') AS thang,
+       SUM(amount) AS doanh_thu
+FROM public.orders
+GROUP BY to_char(order_date, 'YYYY-MM')
+ORDER BY thang
+```
+
+Để tạo **dataset ảo**, vào **Datasets** → kết nối **PostgreSQL · Bán hàng mẫu** → **SQL ảo**, dán câu `SELECT` trên, lưu và xem trước. Trong Chart Builder, chọn dataset mới; chiều `thang`, phép **Tổng**, chỉ số `doanh_thu`, biểu đồ **Đường**.
+
+**Phân biệt hai database:** `bi_poc_app` lưu cấu hình và bảng CSV trong schema `uploads`; `bi_poc_source` chứa `public.orders` và `public.products`. Câu `FROM public.orders` sẽ lỗi nếu chọn kết nối **CSV imports (read-only)**. Link dashboard chứa `127.0.0.1` chỉ mở được trên máy đang chạy POC.
+
+## Các màn hình và giới hạn POC
+
+| Màn hình | Có thể thử | Giới hạn cần biết |
 | --- | --- | --- |
-| Tải file & phân tích | CSV UTF-8 tối đa 200 MB, 32 cột, 1 triệu dòng; đọc theo luồng; suy kiểu từ 200 dòng đầu; đếm ô trống/sai kiểu; thống kê cột số; tạo dataset, 1–3 biểu đồ và dashboard; xóa cả dữ liệu nhập | Chỉ CSV dấu phẩy; ngày `YYYY-MM-DD`, số thập phân dấu chấm; sai kiểu thành `NULL` và giữ dòng; chưa có Excel, tự nhận dạng dấu phân cách, công thức phân tích nâng cao, AI hoặc xử lý nền/progress chính xác |
-| Kết nối CSDL | Kiểm tra, lưu mã hóa mật khẩu, duyệt bảng PostgreSQL | Chưa hỗ trợ MySQL/SQLite; chỉ cho phép máy chủ CSDL `127.0.0.1`/`localhost` theo cấu hình |
-| Dataset | Bảng vật lý, SQL ảo, xem trước, lưu nhãn cột | Nhãn cột chưa được áp dụng tự động vào biểu đồ; chưa có kho metric dùng chung |
-| SQL Lab | Chạy SELECT/WITH chỉ đọc, lưu truy vấn, giới hạn 500 dòng/6 giây | SQL gắn với bảng của kết nối được chọn; câu mẫu `public.orders` dùng `bi_poc_source`, không dùng kết nối CSV. Chưa có gợi ý mã, lịch sử phiên hoặc phân tích truy vấn |
-| Chart Builder | Cột, đường, tròn; dimension, SUM/COUNT/AVG; lưu biểu đồ | Chưa có nhiều trục, công thức metric, lọc nhiều điều kiện |
-| Dashboard | Gắn biểu đồ, kéo đổi thứ tự, lọc một chiều, liên kết và iframe | Chưa có lưới kéo-thả tự do; bộ lọc khớp chính xác và chỉ tác động biểu đồ cùng chiều |
-| Bảo mật | Đăng nhập, Admin/Analyst/Viewer, nhóm/thành viên, nhật ký cơ bản | Quyền đang ở mức vai trò toàn hệ thống, chưa có ACL riêng từng dashboard/chart/dataset; chưa có SSO, quản lý vòng đời người dùng, chính sách bảo mật sản xuất |
+| Tổng quan | Xem số nguồn, dataset, biểu đồ, dashboard | Số liệu mô tả trạng thái cục bộ |
+| Tải file & phân tích | CSV UTF-8; chất lượng dữ liệu; dashboard tự động | Chỉ CSV dấu phẩy, tối đa 200 MB/32 cột/1 triệu dòng; ngày `YYYY-MM-DD`; giá trị sai kiểu thành `NULL` |
+| Kết nối dữ liệu | Kiểm tra, lưu, duyệt bảng PostgreSQL | Chưa có MySQL/SQLite; host được giới hạn cho bản demo |
+| Datasets | Bảng vật lý, một câu SQL ảo, xem trước, nhãn cột | Nhãn chưa tự đổi tên trên biểu đồ; chưa có kho metric |
+| SQL Lab | Chạy/lưu `SELECT` hoặc `WITH` chỉ đọc | Tối đa 500 dòng/6 giây; truy vấn lưu phụ thuộc bảng nguồn còn tồn tại |
+| Chart Builder | Cột, đường, tròn; chiều dữ liệu; SUM/COUNT/AVG | Chưa có công thức và bộ lọc nhiều điều kiện |
+| Dashboards | Thêm biểu đồ, đổi thứ tự, lọc một chiều, link/iframe | Chưa kéo thả tự do theo lưới; bộ lọc chỉ tác động biểu đồ cùng chiều |
+| Bảo mật & nhật ký | Admin/Analyst/Viewer, nhóm, nhật ký thao tác | Chưa phân quyền riêng từng dashboard/chart/dataset, chưa có SSO |
 
-Link chia sẻ là công khai đối với ai cầm token và mở được máy chủ; không dùng với dữ liệu nhạy cảm. Bản xem công khai chỉ trả tên và dữ liệu biểu đồ, không trả thông tin chủ sở hữu hoặc token trong phản hồi API.
+Đây là **bằng chứng khả thi**, không phải bản Metabase hoàn chỉnh. Link chia sẻ dashboard là công khai với ai có token và mở được máy chủ; không dùng với dữ liệu nhạy cảm.
 
-## Kiểm tra
+## Build, kiểm tra, dừng và làm lại
 
-```powershell
-cd .\frontend
-npm run build
-npm audit
-```
+- Build lại sau khi sửa mã: `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\build-demo.ps1`. Dừng app trước khi build lại JAR trên Windows bằng `dev\stop-demo.ps1`.
+- Kiểm tra luồng CSV (tạo rồi dọn dữ liệu test): `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-import.ps1`.
+- Kiểm tra thêm các phân hệ PostgreSQL sau khi chạy `seed-demo.ps1`: `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke.ps1`.
+- Dừng ứng dụng: `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\stop-demo.ps1`. Nếu muốn dừng cả PostgreSQL cục bộ, chạy tiếp `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\stop-postgres.ps1`. Dữ liệu vẫn nằm trong `.local/pgdata`.
+- Đặt lại toàn bộ bản demo: `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\reset-demo.ps1`. Script sao lưu database vào `.local/backups`, rồi **xóa cả bảng CSV, `orders`/`products`, kết nối, dataset, biểu đồ và dashboard**. Chỉ dùng khi thật sự muốn trở về trạng thái trống.
 
-```powershell
-cd ..\backend
-mvn -q -DskipTests package
-```
-
-Khi backend đang chạy, từ thư mục `bi-poc`:
-
-```powershell
-pwsh -NoProfile -File .\dev\smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-import.ps1
-```
-
-`smoke.ps1` kiểm tra các phân hệ cũ và cần chạy `dev/seed-demo.ps1` trước để có bảng nguồn mẫu. `smoke-import.ps1` kiểm tra nhập CSV, số liệu, dashboard, file lỗi, quyền Viewer và xóa dữ liệu. Các script xóa dữ liệu kiểm thử do chúng tạo; để trở lại màn hình hoàn toàn trống sau khi test, dùng `reset-demo.ps1`.
-
-Để thử tải nặng bằng file tổng hợp và tự xóa sau khi kiểm tra:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\load-import.ps1 -Rows 1000000
-```
-
-Trên máy demo này, file kiểm thử 5 cột, 1.000.000 dòng (31.586.708 byte) nhập và tạo 3 biểu đồ trong **30,8 giây**, tổng `amount` đối chiếu **50.500.000**. Đây là một phép đo cục bộ, không phải cam kết tốc độ cho mọi file/máy. Giới hạn 200 MB có thể chặn file 1 triệu dòng có nhiều cột hoặc ô văn bản dài.
-
-## Cấu hình
-
-Các biến môi trường trong `backend/src/main/resources/application.properties` cho phép đổi cổng, địa chỉ bind, CSDL, mật khẩu admin, khóa mã hóa, mật khẩu đọc dữ liệu nhập và danh sách host dữ liệu. Mặc định cả backend và frontend chỉ nghe trên `127.0.0.1`. `dev/setup-postgres.ps1` giả định PostgreSQL 18 ở `C:\Program Files\PostgreSQL\18\bin`; nếu máy khác cài bản/đường dẫn khác, sửa `$bin` trong script hoặc cấu hình kết nối PostgreSQL của riêng mình. Script đặt `PGCLIENTENCODING=UTF8` để CMD/Windows PowerShell không làm hỏng dữ liệu tiếng Việt khi nạp `source.sql`. Chỉ khi truyền `-WithSampleData`, script mới nạp bảng `orders` và `products`.
-
-Trước khi build lại JAR trên Windows, chạy `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\stop-demo.ps1` vì tiến trình Java đang chạy sẽ khóa JAR cũ. Sau khi build frontend và backend, chạy lại `start-demo.ps1`.
-
-Để dừng cụm PostgreSQL mẫu sau buổi demo:
-
-```powershell
-& 'C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe' -D .\.local\pgdata stop
-```
-
-Nếu chạy bằng `start-demo.ps1`, dùng `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\stop-demo.ps1` để dừng app nền; nếu chạy `java -jar` trực tiếp, dùng `Ctrl+C`. Nếu đang phát triển giao diện, có thể chạy riêng `npm run dev` ở `frontend` để dùng máy chủ Vite tại `127.0.0.1:5173`; Vite chuyển `/api` sang Spring Boot tại cổng 8081. Không xóa `.local/pgdata` nếu muốn giữ dashboard và dữ liệu đã tạo.
+Mã nguồn và file CSV mẫu vẫn nguyên sau khi đặt lại. `.local` chứa database/log/backup riêng của từng máy và không được đưa lên Git. Nếu ứng dụng không khởi động, xem `.local/app.err.log`; nếu thiếu công cụ, kiểm tra các lệnh trong phần yêu cầu cài đặt; nếu cổng 5433 bị chiếm, dừng tiến trình đang dùng cổng đó trước khi chạy POC.

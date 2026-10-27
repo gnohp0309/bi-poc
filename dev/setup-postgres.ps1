@@ -1,12 +1,12 @@
 param([switch]$WithSampleData)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$bin = 'C:\Program Files\PostgreSQL\18\bin'
+. (Join-Path $PSScriptRoot 'postgres-bin.ps1')
+$bin = Resolve-PostgresBin -Root $root
 $data = Join-Path $root '.local\pgdata'
 $log = Join-Path $root '.local\postgres.log'
 $passFile = Join-Path $root '.local\pg-password.txt'
 $env:PGCLIENTENCODING = 'UTF8'
-if (-not (Test-Path (Join-Path $bin 'initdb.exe'))) { throw 'PostgreSQL 18 was not found at C:\Program Files\PostgreSQL\18\bin' }
 New-Item -ItemType Directory -Path (Join-Path $root '.local') -Force | Out-Null
 if (-not (Test-Path (Join-Path $data 'PG_VERSION'))) {
   [System.IO.File]::WriteAllText($passFile, "Demo2026!`n", [System.Text.Encoding]::ASCII)
