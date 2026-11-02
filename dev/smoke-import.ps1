@@ -1,8 +1,8 @@
 ﻿param([string]$BaseUrl = 'http://127.0.0.1:8081/api')
 $ErrorActionPreference = 'Stop'
 $base = $BaseUrl.TrimEnd('/')
-$curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue
-if (-not $curl) { $curl = Get-Command curl -CommandType Application -ErrorAction Stop }
+$curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $curl) { $curl = Get-Command curl -CommandType Application -ErrorAction Stop | Select-Object -First 1 }
 $root = Split-Path -Parent $PSScriptRoot
 $fixture = Join-Path $PSScriptRoot 'import-fixture.csv'
 $local = Join-Path $root '.local'
