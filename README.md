@@ -26,8 +26,8 @@ Lần chạy đầu, script tự build frontend/backend và tạo PostgreSQL ri�
 | Tài khoản | Mật khẩu | Vai trò |
 | --- | --- | --- |
 | `admin` | `Demo2026!` | Quản trị |
-| `analyst` | `Demo2026!` | Tạo và sửa |
-| `viewer` | `Demo2026!` | Chỉ xem |
+| `analyst` | `Demo2026!` | Tạo và sửa; được tạo khi chạy `seed-demo.ps1` |
+| `viewer` | `Demo2026!` | Chỉ xem; được tạo khi chạy `seed-demo.ps1` |
 
 Nếu PostgreSQL được cài ở đường dẫn khác và script không tìm thấy, đặt biến `POC_POSTGRES_BIN` trỏ đến thư mục `bin` của PostgreSQL trước khi chạy. Đây là **mật khẩu mẫu công khai**, chỉ dùng với dữ liệu giả lập trên máy cá nhân.
 
@@ -42,6 +42,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\seed-demo.ps1
 ```
 
 Script nạp `public.orders` và `public.products` vào database `bi_poc_source`, rồi tạo kết nối **PostgreSQL · Bán hàng mẫu**, dataset, biểu đồ và dashboard mẫu. Trong **SQL Lab**, chọn kết nối này khi truy vấn `public.orders`. Kết nối **CSV imports (read-only)** dùng database khác; bảng CSV có tên `uploads.csv_...` mới sau mỗi lần nhập.
+
+## Phát triển cùng nhóm
+
+Mỗi người clone repo về máy riêng, tạo nhánh chức năng và gửi Pull Request vào `main`. Xem [quy trình làm nhóm](CONTRIBUTING.md), [cách chạy khi sửa code](docs/DEVELOPMENT.md) và [API hiện có](docs/API.md).
+
+**Chat AI và dashboard theo template đang là phần cần triển khai**, chưa có trong bản hiện tại. [Đề xuất tích hợp](docs/TEAM_INTEGRATION.md) mô tả ranh giới công việc để nhóm thống nhất trước khi viết code.
 
 ## Giới hạn của bản thử nghiệm
 

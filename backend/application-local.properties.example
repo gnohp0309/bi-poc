@@ -1,0 +1,10 @@
+# Copy to application-local.properties inside backend/ for local overrides.
+# Run Spring Boot with backend/ as the working directory.
+# This example contains public local-demo defaults, not production credentials.
+server.port=8081
+spring.datasource.url=jdbc:postgresql://127.0.0.1:5433/bi_poc_app
+spring.datasource.username=postgres
+spring.datasource.password=Demo2026!
+poc.allowed-db-hosts=127.0.0.1,localhost
+# Keep this value stable after saving encrypted database connections.
+poc.secret.key=local-poc-key-change-before-sharing

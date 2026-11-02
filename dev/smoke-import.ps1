@@ -1,5 +1,8 @@
+﻿param([string]$BaseUrl = 'http://127.0.0.1:8081/api')
 $ErrorActionPreference = 'Stop'
-$base = 'http://127.0.0.1:8081/api'
+$base = $BaseUrl.TrimEnd('/')
+$curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue
+if (-not $curl) { $curl = Get-Command curl -CommandType Application -ErrorAction Stop }
 $root = Split-Path -Parent $PSScriptRoot
 $fixture = Join-Path $PSScriptRoot 'import-fixture.csv'
 $local = Join-Path $root '.local'
@@ -11,10 +14,10 @@ New-Item -ItemType Directory -Path $local -Force | Out-Null
 
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
 function Login($username) {
-  return Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body (@{username=$username;password='Demo2026!'} | ConvertTo-Json -Compress)
+  return Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json; charset=utf-8' -Body (@{username=$username;password='Demo2026!'} | ConvertTo-Json -Compress)
 }
 function Upload($path, $filename, $token) {
-  $status = & curl.exe -sS -o $responseFile -w '%{http_code}' -X POST "$base/imports" -H "Authorization: Bearer $token" -F "file=@$path;filename=$filename" -F 'title=Kiểm thử nhập CSV'
+  $status = & $curl.Source -sS -o $responseFile -w '%{http_code}' -X POST "$base/imports" -H "Authorization: Bearer $token" -F "file=@$path;filename=$filename" -F 'title=Kiểm thử nhập CSV'
   if ($LASTEXITCODE -ne 0) { throw "curl upload failed: $LASTEXITCODE" }
   $body = Get-Content -LiteralPath $responseFile -Raw -Encoding UTF8 | ConvertFrom-Json
   return @{ status=[int]$status; body=$body }

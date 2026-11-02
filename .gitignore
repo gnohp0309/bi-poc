@@ -6,3 +6,12 @@ frontend/dist/
 *.tsbuildinfo
 *.log
 dev/pg-password.txt
+.env
+.env.*
+!.env.example
+backend/application-local.properties
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

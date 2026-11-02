@@ -1,16 +1,22 @@
+param(
+  [string]$BaseUrl = 'http://127.0.0.1:8081/api',
+  [string]$SourceHost = '127.0.0.1',
+  [int]$SourcePort = 5433,
+  [string]$SourceDatabase = 'bi_poc_source'
+)
 $ErrorActionPreference = 'Stop'
-$base = 'http://127.0.0.1:8081/api'
-$login = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body '{"username":"admin","password":"Demo2026!"}'
+$base = $BaseUrl.TrimEnd('/')
+$login = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json; charset=utf-8' -Body '{"username":"admin","password":"Demo2026!"}'
 $headers = @{ Authorization = "Bearer $($login.token)" }
 $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 function Call($method, $path, $body) {
   $args = @{ Method = $method; Uri = "$base$path"; Headers = $headers }
-  if ($null -ne $body) { $args.ContentType = 'application/json'; $args.Body = ($body | ConvertTo-Json -Depth 20 -Compress) }
+  if ($null -ne $body) { $args.ContentType = 'application/json; charset=utf-8'; $args.Body = ($body | ConvertTo-Json -Depth 20 -Compress) }
   return Invoke-RestMethod @args
 }
 $health = Invoke-RestMethod "$base/health"
 if ($health.status -ne 'ok') { throw 'Health check failed' }
-$conn = Call 'POST' '/connections' @{ name = "Smoke $suffix"; host = '127.0.0.1'; port = 5433; database = 'bi_poc_source'; username = 'bi_reader'; password = 'Reader2026!' }
+$conn = Call 'POST' '/connections' @{ name = "Smoke $suffix"; host = $SourceHost; port = $SourcePort; database = $SourceDatabase; username = 'bi_reader'; password = 'Reader2026!' }
 $tables = Call 'GET' "/connections/$($conn.id)/tables" $null
 if (-not ($tables | Where-Object { $_.table -eq 'orders' })) { throw 'Orders table missing' }
 $query = Call 'POST' '/sql/execute' @{ connectionId = $conn.id; sql = 'SELECT region, sum(amount) AS total FROM public.orders GROUP BY region' }
@@ -41,11 +47,11 @@ if ($public.charts.Count -ne 1) { throw 'Public share incorrect' }
 $users = Call 'GET' '/users' $null
 $audit = Call 'GET' '/audit' $null
 if ($users.Count -lt 1 -or $audit.Count -lt 1) { throw 'Security module incorrect' }
-$viewerLogin = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body '{"username":"viewer","password":"Demo2026!"}'
+$viewerLogin = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json; charset=utf-8' -Body '{"username":"viewer","password":"Demo2026!"}'
 $viewerHeaders = @{ Authorization = "Bearer $($viewerLogin.token)" }
 $viewerDashboards = Invoke-RestMethod -Uri "$base/dashboards" -Headers $viewerHeaders
 if ($viewerDashboards.Count -lt 1) { throw 'Viewer could not read dashboards' }
-try { Invoke-RestMethod -Method Post -Uri "$base/sql/execute" -Headers $viewerHeaders -ContentType 'application/json' -Body (@{ connectionId = $conn.id; sql = 'SELECT 1' } | ConvertTo-Json) | Out-Null; throw 'Viewer could execute SQL' }
+try { Invoke-RestMethod -Method Post -Uri "$base/sql/execute" -Headers $viewerHeaders -ContentType 'application/json; charset=utf-8' -Body (@{ connectionId = $conn.id; sql = 'SELECT 1' } | ConvertTo-Json) | Out-Null; throw 'Viewer could execute SQL' }
 catch { if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw } }
 Call 'DELETE' "/dashboards/$($dashboard.id)" $null | Out-Null
 Call 'DELETE' "/connections/$($conn.id)" $null | Out-Null

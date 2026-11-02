@@ -1,11 +1,11 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'setup-postgres.ps1') -WithSampleData
 $base = 'http://127.0.0.1:8081/api'
-$login = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body '{"username":"admin","password":"Demo2026!"}'
+$login = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json; charset=utf-8' -Body '{"username":"admin","password":"Demo2026!"}'
 $headers = @{ Authorization = "Bearer $($login.token)" }
 function Call($method, $path, $body) {
   $args = @{ Method = $method; Uri = "$base$path"; Headers = $headers }
-  if ($null -ne $body) { $args.ContentType = 'application/json'; $args.Body = ($body | ConvertTo-Json -Depth 20 -Compress) }
+  if ($null -ne $body) { $args.ContentType = 'application/json; charset=utf-8'; $args.Body = ($body | ConvertTo-Json -Depth 20 -Compress) }
   return Invoke-RestMethod @args
 }
 $users = Call 'GET' '/users' $null

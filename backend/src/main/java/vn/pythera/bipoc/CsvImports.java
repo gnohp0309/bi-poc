@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PushbackInputStream;
 import java.math.BigDecimal;
+import java.net.URI;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.sql.Types;
@@ -39,12 +40,15 @@ public class CsvImports {
   private final Dashboards dashboards;
   private final ObjectMapper mapper;
   private final String readerPassword;
+  private final String appDatabaseUrl;
 
   CsvImports(JdbcTemplate db, Auth auth, Connections connections, Datasets datasets,
       Charts charts, Dashboards dashboards, ObjectMapper mapper,
-      @Value("${poc.upload.reader.password}") String readerPassword) {
+      @Value("${poc.upload.reader.password}") String readerPassword,
+      @Value("${spring.datasource.url}") String appDatabaseUrl) {
     this.db=db;this.auth=auth;this.connections=connections;this.datasets=datasets;
     this.charts=charts;this.dashboards=dashboards;this.mapper=mapper;this.readerPassword=readerPassword;
+    this.appDatabaseUrl=appDatabaseUrl;
   }
 
   private enum Kind { TEXT, NUMERIC, DATE }
@@ -199,11 +203,18 @@ public class CsvImports {
   }
 
   private UUID uploadConnection(Auth.Actor actor){
-    List<UUID> matches=db.query("SELECT id FROM db_connections WHERE name='CSV imports (read-only)' AND database_name='bi_poc_app' AND username='bi_reader' ORDER BY created_at LIMIT 1",
-        (rs,n)->rs.getObject(1,UUID.class));
+    URI source;
+    try { source=URI.create(appDatabaseUrl.replaceFirst("^jdbc:","")); }
+    catch(IllegalArgumentException e) { throw Api.bad("URL database của ứng dụng không hợp lệ"); }
+    if(!"postgresql".equals(source.getScheme()) || source.getHost()==null || source.getPath()==null || source.getPath().length()<2)
+      throw Api.bad("CSV cần URL database PostgreSQL theo dạng jdbc:postgresql://host:port/database");
+    String host=source.getHost(),database=source.getPath().substring(1);
+    int port=source.getPort()<0?5432:source.getPort();
+    List<UUID> matches=db.query("SELECT id FROM db_connections WHERE name='CSV imports (read-only)' AND host=? AND port=? AND database_name=? AND username='bi_reader' ORDER BY created_at LIMIT 1",
+        (rs,n)->rs.getObject(1,UUID.class),host,port,database);
     if(!matches.isEmpty()) return matches.get(0);
-    return connections.save(Map.of("name","CSV imports (read-only)","host","127.0.0.1","port",5433,
-        "database","bi_poc_app","username","bi_reader","password",readerPassword),actor);
+    return connections.save(Map.of("name","CSV imports (read-only)","host",host,"port",port,
+        "database",database,"username","bi_reader","password",readerPassword),actor);
   }
 
   private UUID chart(UUID datasetId,String name,String type,String dimension,String metric,String aggregate,Auth.Actor actor){

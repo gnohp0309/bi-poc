@@ -1,0 +1,88 @@
+name: Build and API smoke
+
+on:
+  push:
+    branches: [main, 'feature/**', 'fix/**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: Demo2026!
+          POSTGRES_DB: bi_poc_app
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bi_poc_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Verify and package backend
+        working-directory: backend
+        run: mvn -B verify
+      - name: Prepare isolated sample database
+        env:
+          PGPASSWORD: Demo2026!
+        run: |
+          psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE bi_reader LOGIN PASSWORD 'Reader2026!'"
+          createdb -h 127.0.0.1 -p 5433 -U postgres bi_poc_source
+          psql -h 127.0.0.1 -p 5433 -U postgres -d bi_poc_source -v ON_ERROR_STOP=1 -f dev/source.sql
+          psql -h 127.0.0.1 -p 5433 -U postgres -d bi_poc_app -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA uploads; GRANT USAGE ON SCHEMA uploads TO bi_reader;'
+      - name: Start backend
+        run: |
+          nohup java -jar backend/target/bi-poc-0.1.0.jar > /tmp/bi-poc-app.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8081/api/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/bi-poc-app.log
+          exit 1
+      - name: Create demo roles for smoke checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'http://127.0.0.1:8081/api'
+          $login = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body '{"username":"admin","password":"Demo2026!"}'
+          $headers = @{Authorization="Bearer $($login.token)"}
+          foreach ($role in @('ANALYST','VIEWER')) {
+            $body = @{username=$role.ToLowerInvariant();password='Demo2026!';role=$role} | ConvertTo-Json -Compress
+            Invoke-RestMethod -Method Post -Uri "$base/users" -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+          }
+      - name: Check source, SQL, chart, dashboard and roles
+        shell: pwsh
+        run: ./dev/smoke.ps1
+      - name: Check CSV import and invalid inputs
+        shell: pwsh
+        run: ./dev/smoke-import.ps1
+      - name: Backend log on failure
+        if: failure()
+        run: cat /tmp/bi-poc-app.log 2>/dev/null || true
