@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS dashboards (
   share_token UUID UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE charts ADD COLUMN IF NOT EXISTS time_grain TEXT CHECK (time_grain IS NULL OR time_grain = 'month');
 CREATE TABLE IF NOT EXISTS dashboard_charts (
   dashboard_id UUID NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
   chart_id UUID NOT NULL REFERENCES charts(id) ON DELETE CASCADE,

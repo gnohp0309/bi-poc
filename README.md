@@ -47,7 +47,7 @@ Script nạp `public.orders` và `public.products` vào database `bi_poc_source`
 
 Mỗi người clone repo về máy riêng, tạo nhánh chức năng và gửi Pull Request vào `main`. Xem [quy trình làm nhóm](CONTRIBUTING.md), [cách chạy khi sửa code](docs/DEVELOPMENT.md) và [API hiện có](docs/API.md).
 
-**Chat AI và dashboard theo template đang là phần cần triển khai**, chưa có trong bản hiện tại. [Đề xuất tích hợp](docs/TEAM_INTEGRATION.md) mô tả ranh giới công việc để nhóm thống nhất trước khi viết code.
+**Dashboard theo template đã có ba mẫu: Tổng quan doanh thu, Phân tích sản phẩm bán ra và Theo dõi trạng thái đơn hàng**, xem [hướng dẫn BA-25](docs/DASHBOARD_TEMPLATES.md). Chat AI và tạo dashboard qua chat chưa triển khai. [Đề xuất tích hợp](docs/TEAM_INTEGRATION.md) mô tả ranh giới công việc để nhóm thống nhất trước khi viết code.
 
 ## Giới hạn của bản thử nghiệm
 

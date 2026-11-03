@@ -105,4 +105,4 @@ Dataset/dashboard do CSV sinh cần xóa qua `/imports/{id}`, không xóa trực
 
 ## Phần chưa có
 
-Chưa có endpoint chat AI, metadata context dành riêng cho AI, template dashboard hoặc tạo dashboard từ chat. Các API ở [TEAM_INTEGRATION](TEAM_INTEGRATION.md) là đề xuất cần thống nhất/triển khai, không gọi được trên bản hiện tại.
+Đã có API template dashboard và metadata cột dataset, xem [hợp đồng BA-25](DASHBOARD_TEMPLATES.md). Chưa có endpoint chat AI, metadata context dành riêng cho AI hoặc tạo dashboard từ chat. Các API chat/AI ở [TEAM_INTEGRATION](TEAM_INTEGRATION.md) là đề xuất cần thống nhất/triển khai.
