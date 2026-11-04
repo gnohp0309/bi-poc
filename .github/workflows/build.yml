@@ -53,6 +53,7 @@ jobs:
         run: |
           psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE bi_reader LOGIN PASSWORD 'Reader2026!'"
           createdb -h 127.0.0.1 -p 5433 -U postgres bi_poc_source
+          psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE bi_poc_source SET timezone TO 'Asia/Bangkok'"
           psql -h 127.0.0.1 -p 5433 -U postgres -d bi_poc_source -v ON_ERROR_STOP=1 -f dev/source.sql
           psql -h 127.0.0.1 -p 5433 -U postgres -d bi_poc_app -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA uploads; GRANT USAGE ON SCHEMA uploads TO bi_reader;'
       - name: Start backend

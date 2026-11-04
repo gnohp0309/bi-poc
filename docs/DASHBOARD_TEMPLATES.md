@@ -64,6 +64,8 @@ Yêu cầu database mẫu `bi_poc_source`, tài khoản admin/viewer (chạy see
 
 Có thể truyền `-SourceHost`, `-SourcePort`, `-SourceDatabase` cho nguồn thử riêng. Kiểm tra tích hợp còn đối chiếu bộ lọc tháng, UTC ở ranh giới tháng với API phân tích và từ chối chia tháng trên cột số.
 
+CI đặt múi giờ database nguồn thử thành Asia/Bangkok để ca timestamptz không vô tình chỉ được kiểm tra trên server UTC. Cấu hình này chỉ áp dụng database thử của CI.
+
 ## Theo dõi trạng thái đơn hàng
 
 `templateId: "order-status"`; mapping gồm `date/revenue/status`. Dataset Đơn hàng 2025 ánh xạ `order_date/amount/status`. Ví dụ:
