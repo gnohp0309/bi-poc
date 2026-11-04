@@ -4,9 +4,10 @@ import type { Actor, Chart, Connection, Dashboard, Dataset } from './api'
 import { ConnectionsPage, DatasetsPage, SqlPage, ChartsPage, SecurityPage } from './screens'
 import { DashboardsPage, PublicDashboard } from './dashboards'
 import { ImportsPage } from './imports'
+import { ChatPage } from './chat'
 import { Empty, SectionTitle } from './ui'
 
-type Page = 'overview' | 'imports' | 'connections' | 'datasets' | 'sql' | 'charts' | 'dashboards' | 'security'
+type Page = 'overview' | 'imports' | 'connections' | 'datasets' | 'sql' | 'charts' | 'dashboards' | 'chat' | 'security'
 
 const nav: { id: Page; label: string; number: string }[] = [
   { id: 'overview', label: 'Tổng quan', number: '00' },
@@ -16,7 +17,8 @@ const nav: { id: Page; label: string; number: string }[] = [
   { id: 'sql', label: 'SQL Lab', number: '04' },
   { id: 'charts', label: 'Chart Builder', number: '05' },
   { id: 'dashboards', label: 'Dashboards', number: '06' },
-  { id: 'security', label: 'Bảo mật & nhật ký', number: '07' }
+  { id: 'chat', label: 'Chat AI', number: '07' },
+  { id: 'security', label: 'Bảo mật & nhật ký', number: '08' }
 ]
 
 const descriptions: Record<Page, string> = {
@@ -27,6 +29,7 @@ const descriptions: Record<Page, string> = {
   sql: 'Soạn và chạy câu SELECT trong một giao diện có giới hạn truy vấn.',
   charts: 'Chọn chiều dữ liệu, phép tổng hợp và dạng biểu đồ.',
   dashboards: 'Sắp xếp biểu đồ, lọc dữ liệu và chia sẻ bản xem.',
+  chat: 'Hỏi đáp dữ liệu bằng ngôn ngữ tự nhiên với AI.',
   security: 'Quản lý người dùng, nhóm và xem lịch sử thao tác.'
 }
 
@@ -85,9 +88,9 @@ export default function App() {
     <div className="workspace">
       <header className="topbar"><span>PYTHERA AI LAB <b>/</b> {active.label.toUpperCase()}</span><div className="account"><span className="avatar">{actor.username.slice(0, 1).toUpperCase()}</span><span>{actor.username}<small>{actor.role}</small></span><button className="text-button" onClick={logout}>Đăng xuất</button></div></header>
       <main className="main-content">
-        <div className="page-heading"><div><span className="eyebrow">BI DASHBOARD / BẢN THỬ NGHIỆM</span><h1>{active.label}</h1><p>{descriptions[page]}</p></div><span className="page-number">{active.number} / 07</span></div>
+        <div className="page-heading"><div><span className="eyebrow">BI DASHBOARD / BẢN THỬ NGHIỆM</span><h1>{active.label}</h1><p>{descriptions[page]}</p></div><span className="page-number">{active.number} / 08</span></div>
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
-        {actor.role === 'VIEWER' && <div className="notice" role="status">Chế độ chỉ xem: tài khoản này không thể tạo, sửa hoặc xóa dữ liệu.</div>}
+        {actor.role === 'VIEWER' && page !== 'chat' && <div className="notice" role="status">Chế độ chỉ xem: tài khoản này không thể tạo, sửa hoặc xóa dữ liệu.</div>}
         {page === 'overview' && <Overview counts={[connections.length,datasets.length,charts.length,dashboards.length]} go={setPage} dashboards={dashboards} />}
         {page === 'imports' && <ImportsPage canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
         {page === 'connections' && <ConnectionsPage connections={connections} done={done} />}
@@ -95,6 +98,7 @@ export default function App() {
         {page === 'sql' && <SqlPage connections={connections} done={done} />}
         {page === 'charts' && <ChartsPage datasets={datasets} charts={charts} done={done} />}
         {page === 'dashboards' && <DashboardsPage dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}
+        {page === 'chat' && <ChatPage datasets={datasets} done={done} />}
         {page === 'security' && <SecurityPage />}
       </main>
     </div>
