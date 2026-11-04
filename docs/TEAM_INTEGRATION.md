@@ -2,6 +2,8 @@
 
 Tài liệu này mô tả hướng ghép ba phần việc để nhóm thống nhất. Chat AI và dịch vụ FastAPI chưa được triển khai. API template đã có mẫu sales-overview, product-analysis và order-status; xem [hợp đồng BA-25](DASHBOARD_TEMPLATES.md). Không coi đây là tính năng đã nghiệm thu hoặc yêu cầu đã được leader duyệt chi tiết.
 
+Phần dữ liệu đã bổ sung `GET /api/datasets/{id}/metadata` và `POST /api/datasets/{id}/analyze`, theo [hợp đồng dữ liệu](DATA_ANALYSIS.md). Dịch vụ AI có thể dùng metadata và trả cấu hình phân tích có cấu trúc; endpoint template đã có, phần điều phối chat vẫn cần triển khai.
+
 ## Ranh giới công việc
 
 | Phần | Trách nhiệm | Công nghệ đề xuất |

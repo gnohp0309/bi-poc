@@ -86,6 +86,9 @@ jobs:
       - name: Check dashboard template creation
         shell: pwsh
         run: ./dev/smoke-templates.ps1
+      - name: Check dataset analysis, validation and 500000 rows
+        shell: pwsh
+        run: ./dev/smoke-analysis.ps1
       - name: Backend log on failure
         if: failure()
         run: cat /tmp/bi-poc-app.log 2>/dev/null || true
