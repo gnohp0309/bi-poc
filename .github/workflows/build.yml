@@ -83,6 +83,9 @@ jobs:
       - name: Check CSV import and invalid inputs
         shell: pwsh
         run: ./dev/smoke-import.ps1
+      - name: Check dataset analysis, validation and 500000 rows
+        shell: pwsh
+        run: ./dev/smoke-analysis.ps1
       - name: Backend log on failure
         if: failure()
         run: cat /tmp/bi-poc-app.log 2>/dev/null || true

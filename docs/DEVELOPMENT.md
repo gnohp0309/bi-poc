@@ -79,6 +79,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\start-demo.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\seed-demo.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-import.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-analysis.ps1
 ```
 
 `start-demo.ps1` chỉ tự build khi chưa có JAR. Sau khi pull/sửa source, phải build lại hoặc dùng chế độ phát triển ở trên; chỉ restart JAR cũ sẽ không có code mới.
@@ -100,7 +101,7 @@ Build không thay thế kiểm tra giao diện: mở màn hình đã sửa, ch�
 
 Seed không ghi đè bảng nguồn đã có dữ liệu, nên không dùng số lượng cố định này để kết luận bảng đã được chỉnh tay là lỗi. Tên bảng CSV và mọi UUID khác nhau giữa các máy/lần nhập; lấy ID từ API, không hardcode ID của người khác.
 
-Chưa có bằng chứng kiểm thử chung cho yêu cầu khoảng 500.000 dòng. Script `load-import.ps1 -Rows 500000` có thể dùng trên môi trường thử riêng để đo; ghi lại máy, thời gian, số dòng và tổng đối chiếu. Không ghi nhận yêu cầu dữ liệu lớn đã đạt chỉ dựa vào giới hạn cấu hình 1.000.000 dòng.
+`smoke-analysis.ps1` kiểm tra phân tích trên 500.000 dòng sinh bởi PostgreSQL và đối chiếu tổng/đếm toàn bộ nguồn, không giới hạn nguồn ở 500 dòng kết quả. Đây là kiểm tra dữ liệu sinh, chưa thay thế thử import CSV hoặc dữ liệu thật ở quy mô đó. Script `load-import.ps1 -Rows 500000` có thể dùng trên môi trường thử riêng để đo import; ghi lại máy, thời gian, số dòng và tổng đối chiếu.
 
 ## 7. Lỗi thường gặp
 

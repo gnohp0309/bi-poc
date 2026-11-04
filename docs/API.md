@@ -37,6 +37,8 @@ Response gồm `token` và `user` với `id`, `username`, `role`. Các ví dụ 
 | DELETE | `/connections/{id}` | Xóa; có thể xóa các đối tượng phụ thuộc |
 | GET / POST | `/datasets` | Liệt kê / tạo dataset |
 | GET | `/datasets/{id}/preview` | Xem trước tối đa 20 dòng |
+| GET | `/datasets/{id}/metadata` | Metadata có kiểu cột, nhãn và phép tổng hợp được hỗ trợ |
+| POST | `/datasets/{id}/analyze` | Phân tích theo cấu hình JSON; ADMIN/ANALYST |
 | PUT | `/datasets/{id}/aliases` | Lưu `{"aliases":{"amount":"Doanh thu"}}` |
 | DELETE | `/datasets/{id}` | Xóa dataset và phụ thuộc |
 
@@ -47,6 +49,8 @@ Payload kiểm tra/lưu kết nối:
 ```
 
 Tạo dataset vật lý: `connectionId`, `name`, `kind: "PHYSICAL"`, `sourceName: "public.orders"`. Dataset ảo thay hai trường cuối bằng `kind: "VIRTUAL"`, `sql: "SELECT region, amount FROM public.orders"`. Các thao tác tạo đối tượng trả `{"id":"UUID"}`.
+
+Xem [hợp đồng phân tích dữ liệu](DATA_ANALYSIS.md) để ghép phần AI: `/metadata` không lấy dữ liệu mẫu/credentials; `/analyze` nhận nhóm, chỉ số, bộ lọc có kiểm soát và tổng hợp ở PostgreSQL, không nhận SQL từ AI.
 
 ## SQL
 
@@ -105,4 +109,4 @@ Dataset/dashboard do CSV sinh cần xóa qua `/imports/{id}`, không xóa trực
 
 ## Phần chưa có
 
-Chưa có endpoint chat AI, metadata context dành riêng cho AI, template dashboard hoặc tạo dashboard từ chat. Các API ở [TEAM_INTEGRATION](TEAM_INTEGRATION.md) là đề xuất cần thống nhất/triển khai, không gọi được trên bản hiện tại.
+Đã có metadata và phân tích có cấu trúc phục vụ phần AI. Chưa có endpoint chat AI, template dashboard hoặc tạo dashboard từ chat trên nhánh này. Các đường dẫn chat/template ở [TEAM_INTEGRATION](TEAM_INTEGRATION.md) cần được ghép từ phần việc tương ứng trước khi gọi.
