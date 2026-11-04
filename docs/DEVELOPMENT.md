@@ -79,6 +79,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\start-demo.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\seed-demo.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-import.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-templates.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-analysis.ps1
 ```
 

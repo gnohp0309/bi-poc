@@ -1,4 +1,9 @@
-param([string]$BaseUrl = 'http://127.0.0.1:8081/api')
+param(
+  [string]$BaseUrl = 'http://127.0.0.1:8081/api',
+  [string]$SourceHost = '127.0.0.1',
+  [int]$SourcePort = 5433,
+  [string]$SourceDatabase = 'bi_poc_source'
+)
 $ErrorActionPreference = 'Stop'
 $base = $BaseUrl.TrimEnd('/')
 $login = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body '{"username":"admin","password":"Demo2026!"}'
@@ -16,9 +21,11 @@ function Rejected($body, $status = 400) {
   throw 'Invalid request unexpectedly succeeded'
 }
 $conn = $null
+$import = $null
+$responseFile = $null
 $dashboardIds = @()
 try {
-  $conn = Call 'POST' '/connections' @{ name = 'Template smoke'; host = '127.0.0.1'; port = 5433; database = 'bi_poc_source'; username = 'bi_reader'; password = 'Reader2026!' }
+  $conn = Call 'POST' '/connections' @{ name = 'Template smoke'; host = $SourceHost; port = $SourcePort; database = $SourceDatabase; username = 'bi_reader'; password = 'Reader2026!' }
   $sql = "SELECT * FROM (VALUES (DATE '2025-01-01',100::numeric,'North','A'),(DATE '2025-01-15',200::numeric,'North','B'),(DATE '2025-02-01',400::numeric,'South','A'),(NULL::date,50::numeric,'South','B')) AS t(order_date,amount,region,category)"
   $dataset = Call 'POST' '/datasets' @{ connectionId = $conn.id; name = 'Template fixture'; kind = 'VIRTUAL'; sql = $sql }
   $templates = @(Call 'GET' '/dashboard-templates' $null)
@@ -39,6 +46,39 @@ try {
     Assert (($detail.charts[1].rows | Where-Object label -eq 'South').value -eq 450) 'Region sum should include NULL date'
     Assert (($detail.charts[2].rows | Where-Object label -eq 'A').value -eq 500) 'Category sum differs'
   }
+  $filteredMonth = Call 'GET' "/dashboards/$($created.dashboardId)?filterDimension=order_date&filter=2025-01" $null
+  Assert ($filteredMonth.charts[0].rows.Count -eq 1 -and $filteredMonth.charts[0].rows[0].value -eq 300) 'Monthly dashboard filter must match month buckets'
+  Assert (($filteredMonth.charts[1].rows | Where-Object label -eq 'South').value -eq 450) 'Monthly filter affected region chart'
+  # The AI analysis API and dashboard must use the same UTC month for timestamptz.
+  $zonedSql = "SELECT * FROM (VALUES (TIMESTAMPTZ '2025-01-31 23:30:00-02',100::numeric,'North','A'),(TIMESTAMPTZ '2025-01-31 23:30:00+02',200::numeric,'South','B')) AS t(event_time,total_value,area,department)"
+  $zonedDataset = Call 'POST' '/datasets' @{connectionId=$conn.id;name='Template timezone fixture';kind='VIRTUAL';sql=$zonedSql}
+  $zonedDashboard = Call 'POST' '/dashboards/from-template' @{datasetId=$zonedDataset.id;templateId='sales-overview';name='UTC month check';mapping=@{date='event_time';revenue='total_value';region='area';category='department'}}
+  $dashboardIds += $zonedDashboard.dashboardId
+  $zonedDetail = Call 'GET' "/dashboards/$($zonedDashboard.dashboardId)" $null
+  Assert ($zonedDetail.charts[0].rows.Count -eq 2) 'Timestamp months should use UTC'
+  Assert (($zonedDetail.charts[0].rows | Where-Object label -eq '2025-01').value -eq 200) 'UTC January total differs'
+  Assert (($zonedDetail.charts[0].rows | Where-Object label -eq '2025-02').value -eq 100) 'UTC February total differs'
+  $zonedAnalysis = Call 'POST' "/datasets/$($zonedDataset.id)/analyze" @{groupBy=@(@{column='event_time';timeGrain='month';alias='month'});metrics=@(@{column='total_value';aggregate='sum';alias='revenue'})}
+  Assert ($zonedAnalysis.rows[0].revenue -eq $zonedDetail.charts[0].rows[0].value -and $zonedAnalysis.rows[1].revenue -eq $zonedDetail.charts[0].rows[1].value) 'Template and AI analysis month totals differ'
+  try {
+    Call 'POST' '/charts/preview' @{datasetId=$dataset.id;chartType='bar';dimension='amount';metric='amount';aggregate='sum';timeGrain='month'} | Out-Null
+    throw 'Numeric dimension accepted a month time grain'
+  } catch { if ($null -eq $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 400) { throw } }
+  $root = Split-Path -Parent $PSScriptRoot
+  $local = Join-Path $root '.local'
+  New-Item -ItemType Directory -Path $local -Force | Out-Null
+  $responseFile = Join-Path $local 'template-import-response.json'
+  $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $curl) { $curl = Get-Command curl -CommandType Application -ErrorAction Stop | Select-Object -First 1 }
+  $csv = Join-Path $root 'demo/doanh_thu_poc.csv'
+  $status = & $curl.Source -sS -o $responseFile -w '%{http_code}' -X POST "$base/imports" -H "Authorization: Bearer $($login.token)" -F "file=@$csv" -F 'title=Template CSV fixture'
+  if ($LASTEXITCODE -ne 0 -or [int]$status -ne 200) { throw 'Template CSV upload failed.' }
+  $import = Get-Content -LiteralPath $responseFile -Raw -Encoding UTF8 | ConvertFrom-Json
+  $csvDashboard = Call 'POST' '/dashboards/from-template' @{datasetId=$import.dataset_id;templateId='sales-overview';name='CSV template check';mapping=@{date='c_ngay';revenue='c_doanh_thu';region='c_khu_vuc';category='c_danh_muc'}}
+  $dashboardIds += $csvDashboard.dashboardId
+  $csvDetail = Call 'GET' "/dashboards/$($csvDashboard.dashboardId)" $null
+  Assert (($csvDetail.charts[0].rows | Measure-Object value -Sum).Sum -eq 9300000) 'CSV month total differs'
+  Assert (($csvDetail.charts[1].rows | Measure-Object value -Sum).Sum -eq 9700000) 'CSV region total differs'
   $before = @(Call 'GET' '/charts' $null).Count
   $body.mapping.revenue = 'region'; Rejected $body
   $body.mapping.revenue = 'missing'; Rejected $body
@@ -102,10 +142,18 @@ try {
   $viewer = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body '{"username":"viewer","password":"Demo2026!"}'
   $adminHeaders = $headers
   $headers = @{ Authorization = "Bearer $($viewer.token)" }
-  try { Rejected $body 403 } finally { Call 'POST' '/auth/logout' $null | Out-Null; $headers = $adminHeaders }
-  Write-Host 'Template smoke PASS: sales/product/status templates, SUM and COUNT, NULL handling, reload, validation, rollback, empty data, Viewer.'
+  try { Rejected $body 403 } finally { try { Call 'POST' '/auth/logout' $null | Out-Null } finally { $headers = $adminHeaders } }
+  Write-Host 'Template smoke PASS: sales/product/status, CSV, monthly filters, UTC analysis consistency, SUM/COUNT, NULL, reload, validation, rollback, empty data, Viewer.'
 } finally {
-  foreach ($id in $dashboardIds) { Call 'DELETE' "/dashboards/$id" $null | Out-Null }
-  if ($conn) { Call 'DELETE' "/connections/$($conn.id)" $null | Out-Null }
-  Call 'POST' '/auth/logout' $null | Out-Null
+  try { foreach ($id in $dashboardIds) { Call 'DELETE' "/dashboards/$id" $null | Out-Null } }
+  finally {
+    try { if ($import) { Call 'DELETE' "/imports/$($import.id)" $null | Out-Null } }
+    finally {
+      try { if ($conn) { Call 'DELETE' "/connections/$($conn.id)" $null | Out-Null } }
+      finally {
+        if ($responseFile) { Remove-Item -LiteralPath $responseFile -ErrorAction SilentlyContinue }
+        Call 'POST' '/auth/logout' $null | Out-Null
+      }
+    }
+  }
 }

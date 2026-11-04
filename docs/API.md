@@ -38,6 +38,7 @@ Response gồm `token` và `user` với `id`, `username`, `role`. Các ví dụ 
 | GET / POST | `/datasets` | Liệt kê / tạo dataset |
 | GET | `/datasets/{id}/preview` | Xem trước tối đa 20 dòng |
 | GET | `/datasets/{id}/metadata` | Metadata có kiểu cột, nhãn và phép tổng hợp được hỗ trợ |
+| GET | `/datasets/{id}/columns` | Danh sách cột tối giản `{name,type,kind}` để ánh xạ template |
 | POST | `/datasets/{id}/analyze` | Phân tích theo cấu hình JSON; ADMIN/ANALYST |
 | PUT | `/datasets/{id}/aliases` | Lưu `{"aliases":{"amount":"Doanh thu"}}` |
 | DELETE | `/datasets/{id}` | Xóa dataset và phụ thuộc |
@@ -79,11 +80,15 @@ Payload tạo/xem trước:
 
 `chartType`: `bar/line/pie`. `aggregate`: `sum/count/avg`; `metric: "*"` chỉ dùng với `count`. Preview trả cấu hình và `rows: [{label, value}]`, `columns`. Tổng hợp diễn ra tại PostgreSQL; chart hiện giới hạn 100 nhóm kết quả. Chưa có grid `x/y/w/h`, metric tự do hoặc bộ lọc nhiều điều kiện.
 
+`timeGrain: "month"` tùy chọn chỉ dùng với dimension ngày/thời gian; response trả `timeGrain` tương ứng hoặc NULL. Với timestamptz, tháng được tính theo UTC, thống nhất API phân tích. Bộ lọc của chart tháng nhận `YYYY-MM`; các chart không chia tháng vẫn lọc theo giá trị gốc.
+
 ## Dashboard
 
 | Method | Đường dẫn | Mục đích |
 | --- | --- | --- |
 | GET / POST | `/dashboards` | Danh sách / tạo mới với `{name}` |
+| GET | `/dashboard-templates` | Ba template cùng các trường cần ánh xạ |
+| POST | `/dashboards/from-template` | Tạo dashboard bằng `{datasetId,templateId,name,mapping}`; trả `{dashboardId}` |
 | GET | `/dashboards/{id}` | Chi tiết, gồm danh sách chart và dữ liệu |
 | PUT | `/dashboards/{id}/layout` | Gửi `{chartIds: ["UUID", "UUID"]}` để lưu thứ tự |
 | POST / DELETE | `/dashboards/{id}/share` | Tạo token mới / thu hồi chia sẻ |

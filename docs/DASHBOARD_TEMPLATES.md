@@ -52,6 +52,8 @@ Thành công: `{"dashboardId":"UUID"}`. Lỗi: `{"error":"Thông báo"}`, HTTP 4
 
 API chart nhận thêm `timeGrain: "month"` tùy chọn, chỉ dùng với dimension ngày/thời gian. Bỏ trường này giữ hành vi cũ. Cấu hình được lưu trong cột `charts.time_grain`; `schema.sql` tự thêm cột bằng `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` khi khởi động backend, không cần reset database.
 
+Biểu đồ tháng và API `/datasets/{id}/analyze` cùng quy timestamptz về UTC trước khi chia nhóm. Cột date/timestamp không có múi giờ giữ lịch gốc. Lọc biểu đồ tháng bằng `YYYY-MM`, ví dụ `2025-01`; bộ lọc này không áp dụng sang chart vùng/danh mục có dimension khác. Response chart có `timeGrain: "month"` để client nhận biết cách hiển thị/lọc.
+
 ## Kiểm tra
 
 ```powershell
@@ -59,6 +61,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-templates.ps1
 ```
 
 Yêu cầu database mẫu `bi_poc_source`, tài khoản admin/viewer (chạy seed trước). Script tạo dataset ảo riêng để kiểm tra metadata, tổng tháng/vùng/danh mục, doanh thu và số lượng theo sản phẩm, tải lại, đầu vào sai, rollback giữa chừng, dataset rỗng và Viewer; dọn các đối tượng kiểm tra trong `finally`. Script vẫn để lại audit thao tác. Có thể dùng `-BaseUrl http://127.0.0.1:8082/api` khi chạy backend thử nghiệm cổng khác.
+
+Có thể truyền `-SourceHost`, `-SourcePort`, `-SourceDatabase` cho nguồn thử riêng. Kiểm tra tích hợp còn đối chiếu bộ lọc tháng, UTC ở ranh giới tháng với API phân tích và từ chối chia tháng trên cột số.
 
 ## Theo dõi trạng thái đơn hàng
 
