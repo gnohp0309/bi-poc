@@ -49,7 +49,7 @@ Mỗi người clone repo về máy riêng, tạo nhánh chức năng và gửi 
 
 Phần backend có [API metadata và phân tích dataset](docs/DATA_ANALYSIS.md) để tích hợp hỏi đáp dữ liệu: đọc cấu trúc cột và tổng hợp/lọc theo cấu hình JSON có kiểm soát.
 
-**Chat AI và dashboard theo template đang là phần cần triển khai**, chưa có trong bản hiện tại. [Đề xuất tích hợp](docs/TEAM_INTEGRATION.md) mô tả ranh giới công việc để nhóm thống nhất trước khi viết code.
+**Dashboard theo template đã có ba mẫu: Tổng quan doanh thu, Phân tích sản phẩm bán ra và Theo dõi trạng thái đơn hàng**, xem [hướng dẫn BA-25](docs/DASHBOARD_TEMPLATES.md). Chat AI và tạo dashboard qua chat chưa triển khai. [Hợp đồng tích hợp](docs/TEAM_INTEGRATION.md) mô tả cách nối các phần trong nhóm.
 
 ## Giới hạn của bản thử nghiệm
 

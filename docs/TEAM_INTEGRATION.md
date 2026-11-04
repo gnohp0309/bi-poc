@@ -1,8 +1,8 @@
 # Đề xuất tích hợp chat AI và dashboard theo template
 
-Tài liệu này mô tả hướng ghép ba phần việc để nhóm thống nhất. Chat AI, dịch vụ FastAPI và API template chưa được triển khai trong repo hiện tại. Không coi đây là tính năng đã nghiệm thu hoặc yêu cầu đã được leader duyệt chi tiết.
+Tài liệu này mô tả hướng ghép ba phần việc để nhóm thống nhất. Chat AI và dịch vụ FastAPI chưa được triển khai. API template đã có mẫu sales-overview, product-analysis và order-status; xem [hợp đồng BA-25](DASHBOARD_TEMPLATES.md). Không coi đây là tính năng đã nghiệm thu hoặc yêu cầu đã được leader duyệt chi tiết.
 
-Phần dữ liệu đã bổ sung `GET /api/datasets/{id}/metadata` và `POST /api/datasets/{id}/analyze`, theo [hợp đồng dữ liệu](DATA_ANALYSIS.md). Dịch vụ AI có thể dùng metadata và trả cấu hình phân tích có cấu trúc; các endpoint chat/template bên dưới vẫn cần ghép riêng.
+Phần dữ liệu đã bổ sung `GET /api/datasets/{id}/metadata` và `POST /api/datasets/{id}/analyze`, theo [hợp đồng dữ liệu](DATA_ANALYSIS.md). Dịch vụ AI có thể dùng metadata và trả cấu hình phân tích có cấu trúc; endpoint template đã có, phần điều phối chat vẫn cần triển khai.
 
 ## Ranh giới công việc
 
@@ -25,7 +25,7 @@ Phần dữ liệu đã bổ sung `GET /api/datasets/{id}/metadata` và `POST /a
 
 ## Hợp đồng cần chốt trước khi code
 
-Tên đường dẫn sau là **đề xuất**, chưa phải API đã có:
+Các đường dẫn chat/AI sau là **đề xuất**. Hai API template cuối bảng đã có, theo hợp đồng BA-25:
 
 | Giao tiếp | Payload tối thiểu đề xuất |
 | --- | --- |
