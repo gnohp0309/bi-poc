@@ -24,9 +24,13 @@ public class Chat {
   private final ObjectMapper mapper;
   private final HttpClient httpClient;
   private final String aiServiceUrl;
+  private final Charts charts;
+  private final Dashboards dashboards;
+  private final DashboardTemplates dashboardTemplates;
 
   Chat(JdbcTemplate db, Datasets datasets, Queries queries, Auth auth, ObjectMapper mapper,
-       @Value("${poc.ai.service.url:http://127.0.0.1:8082}") String aiServiceUrl) {
+       @Value("${poc.ai.service.url:http://127.0.0.1:8082}") String aiServiceUrl,
+       Charts charts, Dashboards dashboards, DashboardTemplates dashboardTemplates) {
     this.db = db;
     this.datasets = datasets;
     this.queries = queries;
@@ -34,6 +38,9 @@ public class Chat {
     this.mapper = mapper;
     this.aiServiceUrl = aiServiceUrl;
     this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    this.charts = charts;
+    this.dashboards = dashboards;
+    this.dashboardTemplates = dashboardTemplates;
   }
 
   public List<Map<String, Object>> listConversations(Auth.Actor actor) {
@@ -230,6 +237,105 @@ public class Chat {
 
     if ("clarify".equals(intent)) {
       answerText = aiResponse.get("clarification").toString();
+    } else if ("create_dashboard".equals(intent)) {
+      // Handle dashboard creation
+      try {
+        String dashboardName = (String) aiResponse.get("dashboard_name");
+        Boolean useTemplate = (Boolean) aiResponse.get("useTemplate");
+
+        if (dashboardName == null) {
+          answerText = "Xin lỗi, tôi không thể tạo dashboard với thông tin hiện có.";
+        } else if (Boolean.TRUE.equals(useTemplate)) {
+          // Use template approach
+          System.out.println("=== USING TEMPLATE ===");
+          String templateId = (String) aiResponse.get("templateId");
+          @SuppressWarnings("unchecked")
+          Map<String, String> mapping = (Map<String, String>) aiResponse.get("mapping");
+
+          if (templateId == null || mapping == null) {
+            answerText = "Xin lỗi, không thể tạo dashboard từ template.";
+          } else {
+            System.out.println("Template: " + templateId);
+            System.out.println("Mapping: " + mapping);
+
+            Map<String, Object> createRequest = new LinkedHashMap<>();
+            createRequest.put("templateId", templateId);
+            createRequest.put("datasetId", datasetId.toString());
+            createRequest.put("name", dashboardName);
+            createRequest.put("mapping", mapping);
+
+            try {
+              Map<String, Object> createResult = dashboardTemplates.create(createRequest, actor);
+              UUID dashboardId = (UUID) createResult.get("dashboardId");
+
+              answerText = "✅ Đã tạo dashboard \"" + dashboardName + "\" từ template thành công!\n\n" +
+                  "Xem dashboard tại: /dashboards/" + dashboardId;
+
+              metadata.put("dashboard_id", dashboardId.toString());
+              metadata.put("dashboard_name", dashboardName);
+              metadata.put("method", "template");
+              metadata.put("template_id", templateId);
+            } catch (Api.Failure e) {
+              System.err.println("Template creation failed: " + e.getMessage());
+              answerText = "❌ Không thể tạo dashboard từ template: " + e.getMessage();
+            }
+          }
+        } else {
+          // Custom charts approach
+          System.out.println("=== CREATING CUSTOM DASHBOARD ===");
+          @SuppressWarnings("unchecked")
+          List<Map<String, Object>> chartSpecs = (List<Map<String, Object>>) aiResponse.get("charts");
+
+          if (chartSpecs == null || chartSpecs.isEmpty()) {
+            answerText = "Xin lỗi, không có biểu đồ nào được đề xuất.";
+          } else {
+            System.out.println("Dashboard name: " + dashboardName);
+            System.out.println("Charts: " + chartSpecs.size());
+
+            // Create charts
+            List<String> chartIds = new ArrayList<>();
+            for (Map<String, Object> chartSpec : chartSpecs) {
+              System.out.println("Creating chart: " + chartSpec.get("name"));
+
+              // Prepare chart spec with datasetId
+              Map<String, Object> fullSpec = new LinkedHashMap<>(chartSpec);
+              fullSpec.put("datasetId", datasetId.toString());
+
+              try {
+                UUID chartId = charts.save(fullSpec, actor);
+                chartIds.add(chartId.toString());
+                System.out.println("  Created chart: " + chartId);
+              } catch (Exception e) {
+                System.err.println("  Failed to create chart: " + e.getMessage());
+                // Continue with other charts
+              }
+            }
+
+            if (chartIds.isEmpty()) {
+              answerText = "❌ Không thể tạo dashboard: Không thể tạo biểu đồ nào.";
+            } else {
+              // Create dashboard
+              UUID dashboardId = dashboards.save(Map.of("name", dashboardName), actor);
+
+              // Attach charts to dashboard
+              dashboards.layout(dashboardId, Map.of("chartIds", chartIds), actor);
+
+              answerText = "✅ Đã tạo dashboard \"" + dashboardName + "\" thành công với " +
+                  chartIds.size() + " biểu đồ!\n\n" +
+                  "Xem dashboard tại: /dashboards/" + dashboardId;
+
+              metadata.put("dashboard_id", dashboardId.toString());
+              metadata.put("dashboard_name", dashboardName);
+              metadata.put("chart_count", chartIds.size());
+              metadata.put("method", "custom");
+            }
+          }
+        }
+      } catch (Exception e) {
+        System.err.println("Dashboard creation error: " + e.getMessage());
+        e.printStackTrace();
+        answerText = "❌ Không thể tạo dashboard: " + e.getMessage();
+      }
     } else if ("query".equals(intent)) {
       // New approach: AI provides complete SQL
       String sqlTemplate = (String) aiResponse.get("sql");
