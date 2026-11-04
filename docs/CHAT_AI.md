@@ -83,6 +83,10 @@ Intent create_dashboard dùng dashboard_name, useTemplate=true, templateId, mapp
 
 Intent clarify dùng clarification. Câu trả lời **query** được dựng từ các dòng kết quả thật, không dùng nội dung số liệu AI tự viết. Số BigDecimal giữ phần lẻ/độ chính xác; NULL hiển thị NULL. metadata_json của tin nhắn lưu dữ liệu kết quả hoặc dashboard_id để mở lại.
 
+Ở giao tiếp nội bộ với Gemini, kết quả được bọc trong decision và có schema riêng cho query, template, custom, clarify. Mỗi nhánh bắt buộc đủ trường ngay khi sinh JSON; template cần tên/cách tạo/mẫu/ánh xạ, custom cần tên/cách tạo/2–4 biểu đồ. FastAPI chuẩn hóa lại thành response phẳng ở trên, nên frontend/Spring Boot không đổi hợp đồng.
+
+Lỗi cấu hình AI không hợp lệ được phân biệt với lỗi key/provider bằng header nội bộ X-AI-Error-Code. Web hiển thị thông báo phù hợp, không chuyển nguyên chẩn đoán riêng của provider ra trình duyệt.
+
 Chỉ gửi metadata và 10 tin nhắn gần nhất, không gửi mật khẩu kết nối hoặc toàn bộ bảng/sample rows sang Gemini. Tin nhắn gần nhất có cấu hình phân tích để nối ngữ cảnh. Chưa có tóm tắt dài hạn; hội thoại cũ hơn 10 tin nhắn có thể mất ngữ cảnh đối với model.
 
 ## Schema và nâng cấp

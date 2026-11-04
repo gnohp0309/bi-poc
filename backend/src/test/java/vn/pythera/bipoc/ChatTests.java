@@ -7,6 +7,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import java.math.BigDecimal;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import com.sun.net.httpserver.HttpServer;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -78,5 +81,27 @@ class ChatTests {
     var plan=new Chat.AIResponse("id","execute_sql",null,null,null,null,null,null,null,null);
     assertThrows(Api.Failure.class,()->chat.executePlan(UUID.randomUUID(),UUID.randomUUID(),"query",plan,admin));
     verifyNoInteractions(db,analysis,charts,dashboards);
+  }
+  @ParameterizedTest @ValueSource(strings={"INVALID_PLAN","MISSING_API_KEY","PROVIDER_UNAVAILABLE"})
+  void upstreamFailuresUseSafeSpecificMessages(String code) throws Exception {
+    HttpServer server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+    server.createContext("/analyze",exchange->{
+      exchange.getResponseHeaders().set("X-AI-Error-Code",code);
+      byte[] body="{\"detail\":\"secret-provider-diagnostic\"}".getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(502,body.length);
+      try(var out=exchange.getResponseBody()) { out.write(body); }
+    });
+    server.start();
+    try {
+      var service=new Chat(db,datasets,analysis,auth,mapper,"http://127.0.0.1:"+server.getAddress().getPort(),charts,dashboards,templates);
+      Api.Failure failure=assertThrows(Api.Failure.class,()->service.callAI(Map.of("request_id","test")));
+      assertEquals(502,failure.status);
+      assertFalse(failure.getMessage().contains("secret-provider-diagnostic"));
+      if(code.equals("INVALID_PLAN")) {
+        assertTrue(failure.getMessage().contains("cấu hình"));
+        assertFalse(failure.getMessage().contains("API key"));
+      }
+      if(code.equals("MISSING_API_KEY")) assertTrue(failure.getMessage().contains("Chưa cấu hình Gemini"));
+    } finally { server.stop(0); }
   }
 }

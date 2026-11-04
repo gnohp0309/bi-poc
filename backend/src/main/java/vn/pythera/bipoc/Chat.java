@@ -104,13 +104,21 @@ public class Chat {
     if(!requestId.equals(plan.request_id())) throw new Api.Failure(502,"Phản hồi AI không khớp yêu cầu");
     return executePlan(conversationId,datasetId,message,plan,actor);
   }
-  private AIResponse callAI(Map<String,Object> body) {
+  AIResponse callAI(Map<String,Object> body) {
     try {
       HttpRequest request=HttpRequest.newBuilder(URI.create(aiServiceUrl+"/analyze"))
           .timeout(Duration.ofSeconds(30)).header("Content-Type","application/json; charset=utf-8")
           .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body),StandardCharsets.UTF_8)).build();
       HttpResponse<String> response=client.send(request,HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-      if(response.statusCode()!=200) throw new Api.Failure(502,"Dịch vụ AI chưa sẵn sàng; kiểm tra cấu hình, API key hoặc hạn mức");
+      if(response.statusCode()!=200) {
+        String code=response.headers().firstValue("X-AI-Error-Code").orElse("");
+        String message=switch(code) {
+          case "INVALID_PLAN" -> "AI trả cấu hình phân tích hoặc dashboard chưa hợp lệ; hãy thử lại hoặc nêu rõ yêu cầu";
+          case "MISSING_API_KEY" -> "Chưa cấu hình Gemini API key trên dịch vụ AI";
+          default -> "Dịch vụ AI chưa sẵn sàng; kiểm tra cấu hình, API key hoặc hạn mức";
+        };
+        throw new Api.Failure(502,message);
+      }
       if(response.body().length()>100000) throw new Api.Failure(502,"Phản hồi AI vượt giới hạn");
       return responseReader.readValue(response.body());
     } catch(Api.Failure e) { throw e; }
