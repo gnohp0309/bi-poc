@@ -165,7 +165,7 @@ public class Chat {
         extra.put("method","custom");
         extra.put("chart_count",ids.size());
       } else throw Api.bad("AI chưa chọn cách tạo dashboard");
-      answer="Đã tạo dashboard \""+name+"\". Bấm Mở dashboard để xem kết quả.";
+      answer="Đã tạo dashboard \""+name+"\". Các biểu đồ hiển thị ngay bên dưới; mở dashboard đầy đủ để lọc hoặc chỉnh bố cục.";
       extra.put("dashboard_id",dashboardId.toString());
       extra.put("dashboard_name",name);
       result.put("dashboard_id",dashboardId.toString());

@@ -29,7 +29,7 @@ Chỉ phần chat cần FastAPI/Gemini key. SQL Lab, CSV, Chart Builder và dash
 2. Chọn dataset, bấm **Tạo cuộc hội thoại mới**.
 3. Với orders mẫu, hỏi “Tổng doanh thu là bao nhiêu?”, “Doanh thu theo vùng”, rồi “Còn trung bình?”.
 4. Hỏi “Tạo dashboard tổng quan doanh thu”. Nếu có đủ ngày/doanh thu/vùng/danh mục, AI chọn sales-overview.
-5. Bấm **Mở dashboard**, kiểm tra biểu đồ rồi quay lại Chat AI. Hội thoại và dữ liệu kết quả vẫn được giữ khi tải lại.
+5. Các biểu đồ hiện ngay dưới tin nhắn tạo dashboard, trong cùng khung chat. Bấm **Mở dashboard đầy đủ** khi cần lọc/chỉnh bố cục. Mở lại hội thoại cũ vẫn tải các biểu đồ từ dashboard đã lưu, không gọi lại Gemini. Nếu dashboard đã bị xóa hoặc nguồn lỗi, chat hiển thị thông báo và nút tải lại thay vì mất nội dung hội thoại.
 6. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
 7. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
 
