@@ -47,6 +47,8 @@ Script nạp `public.orders` và `public.products` vào database `bi_poc_source`
 
 Mỗi người clone repo về máy riêng, tạo nhánh chức năng và gửi Pull Request vào `main`. Xem [quy trình làm nhóm](CONTRIBUTING.md), [cách chạy khi sửa code](docs/DEVELOPMENT.md) và [API hiện có](docs/API.md).
 
+Phần backend có [API metadata và phân tích dataset](docs/DATA_ANALYSIS.md) để tích hợp hỏi đáp dữ liệu: đọc cấu trúc cột và tổng hợp/lọc theo cấu hình JSON có kiểm soát.
+
 **Chat AI và dashboard theo template đang là phần cần triển khai**, chưa có trong bản hiện tại. [Đề xuất tích hợp](docs/TEAM_INTEGRATION.md) mô tả ranh giới công việc để nhóm thống nhất trước khi viết code.
 
 ## Giới hạn của bản thử nghiệm
