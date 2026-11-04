@@ -1,8 +1,8 @@
 export type Actor = { id: string; username: string; role: 'ADMIN' | 'ANALYST' | 'VIEWER' }
 export type Connection = { id: string; name: string; host: string; port: number; database_name: string; username: string }
 export type Dataset = { id: string; connection_id: string; connection_name: string; name: string; kind: 'PHYSICAL' | 'VIRTUAL'; source_name: string | null; sql_definition: string | null; aliases_json: string }
-export type Chart = { id: string; dataset_id: string; dataset_name: string; name: string; chart_type: 'bar' | 'line' | 'pie'; dimension: string; metric: string; aggregate: 'sum' | 'count' | 'avg' }
-export type ChartData = { id?: string; name?: string; chartType: 'bar' | 'line' | 'pie'; dimension: string; metric: string; aggregate: string; rows: Record<string, unknown>[]; position?: number }
+export type Chart = { id: string; dataset_id: string; dataset_name: string; name: string; chart_type: 'bar' | 'line' | 'pie'; dimension: string; metric: string; aggregate: 'sum' | 'count' | 'avg'; time_grain?: 'month' | null }
+export type ChartData = { id?: string; name?: string; chartType: 'bar' | 'line' | 'pie'; dimension: string; metric: string; aggregate: string; timeGrain?: 'month' | null; rows: Record<string, unknown>[]; position?: number }
 export type Dashboard = { id: string; name: string; chart_count: number; share_token: string | null }
 export type DashboardDetail = Dashboard & { charts: ChartData[] }
 export type QueryResult = { columns: string[]; rows: Record<string, unknown>[]; truncated: boolean }

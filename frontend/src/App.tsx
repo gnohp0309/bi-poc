@@ -97,7 +97,7 @@ export default function App() {
         {page === 'datasets' && <DatasetsPage connections={connections} datasets={datasets} done={done} />}
         {page === 'sql' && <SqlPage connections={connections} done={done} />}
         {page === 'charts' && <ChartsPage datasets={datasets} charts={charts} done={done} />}
-        {page === 'dashboards' && <DashboardsPage dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}
+        {page === 'dashboards' && <DashboardsPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}
         {page === 'chat' && <ChatPage datasets={datasets} done={done} />}
         {page === 'security' && <SecurityPage />}
       </main>

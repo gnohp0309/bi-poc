@@ -11,7 +11,7 @@ echarts.use([BarChart, LineChart, PieChart, GridComponent, TooltipComponent, Leg
 export function ChartCanvas({ data }: { data: ChartData }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!ref.current) return
+    if (!ref.current || !data.rows.length) return
     const chart = echarts.init(ref.current)
     const colors = ['#476B62', '#A7BDB0', '#DAC9A6', '#8D9FB5', '#C2A69B']
     const points = data.rows.map(row => ({ name: String(row.label ?? '—'), value: Number(row.value ?? 0) }))
@@ -35,6 +35,7 @@ export function ChartCanvas({ data }: { data: ChartData }) {
     observer.observe(ref.current)
     return () => { observer.disconnect(); chart.dispose() }
   }, [data])
+  if (!data.rows.length) return <Empty title="Không có dữ liệu" text="Không có dữ liệu phù hợp để hiển thị biểu đồ." />
   return <div className="chart-canvas" ref={ref} role="img" aria-label={`Biểu đồ ${data.name || data.chartType}`} />
 }
 

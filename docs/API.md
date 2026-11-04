@@ -37,6 +37,9 @@ Response gồm `token` và `user` với `id`, `username`, `role`. Các ví dụ 
 | DELETE | `/connections/{id}` | Xóa; có thể xóa các đối tượng phụ thuộc |
 | GET / POST | `/datasets` | Liệt kê / tạo dataset |
 | GET | `/datasets/{id}/preview` | Xem trước tối đa 20 dòng |
+| GET | `/datasets/{id}/metadata` | Metadata có kiểu cột, nhãn và phép tổng hợp được hỗ trợ |
+| GET | `/datasets/{id}/columns` | Danh sách cột tối giản `{name,type,kind}` để ánh xạ template |
+| POST | `/datasets/{id}/analyze` | Phân tích theo cấu hình JSON; ADMIN/ANALYST |
 | PUT | `/datasets/{id}/aliases` | Lưu `{"aliases":{"amount":"Doanh thu"}}` |
 | DELETE | `/datasets/{id}` | Xóa dataset và phụ thuộc |
 
@@ -47,6 +50,8 @@ Payload kiểm tra/lưu kết nối:
 ```
 
 Tạo dataset vật lý: `connectionId`, `name`, `kind: "PHYSICAL"`, `sourceName: "public.orders"`. Dataset ảo thay hai trường cuối bằng `kind: "VIRTUAL"`, `sql: "SELECT region, amount FROM public.orders"`. Các thao tác tạo đối tượng trả `{"id":"UUID"}`.
+
+Xem [hợp đồng phân tích dữ liệu](DATA_ANALYSIS.md) để ghép phần AI: `/metadata` không lấy dữ liệu mẫu/credentials; `/analyze` nhận nhóm, chỉ số, bộ lọc có kiểm soát và tổng hợp ở PostgreSQL, không nhận SQL từ AI.
 
 ## SQL
 
@@ -75,11 +80,15 @@ Payload tạo/xem trước:
 
 `chartType`: `bar/line/pie`. `aggregate`: `sum/count/avg`; `metric: "*"` chỉ dùng với `count`. Preview trả cấu hình và `rows: [{label, value}]`, `columns`. Tổng hợp diễn ra tại PostgreSQL; chart hiện giới hạn 100 nhóm kết quả. Chưa có grid `x/y/w/h`, metric tự do hoặc bộ lọc nhiều điều kiện.
 
+`timeGrain: "month"` tùy chọn chỉ dùng với dimension ngày/thời gian; response trả `timeGrain` tương ứng hoặc NULL. Với timestamptz, tháng được tính theo UTC, thống nhất API phân tích. Bộ lọc của chart tháng nhận `YYYY-MM`; các chart không chia tháng vẫn lọc theo giá trị gốc.
+
 ## Dashboard
 
 | Method | Đường dẫn | Mục đích |
 | --- | --- | --- |
 | GET / POST | `/dashboards` | Danh sách / tạo mới với `{name}` |
+| GET | `/dashboard-templates` | Ba template cùng các trường cần ánh xạ |
+| POST | `/dashboards/from-template` | Tạo dashboard bằng `{datasetId,templateId,name,mapping}`; trả `{dashboardId}` |
 | GET | `/dashboards/{id}` | Chi tiết, gồm danh sách chart và dữ liệu |
 | PUT | `/dashboards/{id}/layout` | Gửi `{chartIds: ["UUID", "UUID"]}` để lưu thứ tự |
 | POST / DELETE | `/dashboards/{id}/share` | Tạo token mới / thu hồi chia sẻ |
@@ -105,4 +114,4 @@ Dataset/dashboard do CSV sinh cần xóa qua `/imports/{id}`, không xóa trực
 
 ## Phần chưa có
 
-Chưa có endpoint chat AI, metadata context dành riêng cho AI, template dashboard hoặc tạo dashboard từ chat. Các API ở [TEAM_INTEGRATION](TEAM_INTEGRATION.md) là đề xuất cần thống nhất/triển khai, không gọi được trên bản hiện tại.
+Đã có API template dashboard và metadata cột dataset, xem [hợp đồng BA-25](DASHBOARD_TEMPLATES.md), cùng metadata/phân tích có cấu trúc phục vụ AI. Chưa có endpoint chat AI hoặc tạo dashboard từ chat. Các API chat/AI ở [TEAM_INTEGRATION](TEAM_INTEGRATION.md) là hợp đồng đề xuất để phần chat tiếp tục triển khai.
