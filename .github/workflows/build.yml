@@ -39,6 +39,15 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ai-service/requirements*.txt
+      - name: Verify AI contract without a provider key
+        run: |
+          pip install -r ai-service/requirements-test.txt
+          python -m unittest discover -s ai-service -p test_main.py -v
       - name: Build frontend
         working-directory: frontend
         run: |
@@ -90,6 +99,19 @@ jobs:
       - name: Check dataset analysis, validation and 500000 rows
         shell: pwsh
         run: ./dev/smoke-analysis.ps1
+      - name: Start real FastAPI with a deterministic test provider
+        run: |
+          nohup python dev/chat-test-ai.py --port 8000 > /tmp/bi-poc-ai.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/bi-poc-ai.log
+          exit 1
+      - name: Check integrated chat and transaction rollback
+        run: python dev/smoke-chat.py --db-name bi_poc_app
       - name: Backend log on failure
         if: failure()
-        run: cat /tmp/bi-poc-app.log 2>/dev/null || true
+        run: |
+          cat /tmp/bi-poc-app.log 2>/dev/null || true
+          cat /tmp/bi-poc-ai.log 2>/dev/null || true

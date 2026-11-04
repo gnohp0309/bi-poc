@@ -112,6 +112,6 @@ CSV tối đa 200 MB, 32 cột, 1.000.000 dòng; UTF-8, dấu phẩy, ngày `YYY
 
 Dataset/dashboard do CSV sinh cần xóa qua `/imports/{id}`, không xóa trực tiếp từng đối tượng. Xóa kết nối/dataset khác có thể cascade xuống chart; kiểm tra phụ thuộc trước khi thao tác.
 
-## Phần chưa có
+## Chat AI
 
-Đã có API template dashboard và metadata cột dataset, xem [hợp đồng BA-25](DASHBOARD_TEMPLATES.md), cùng metadata/phân tích có cấu trúc phục vụ AI. Chưa có endpoint chat AI hoặc tạo dashboard từ chat. Các API chat/AI ở [TEAM_INTEGRATION](TEAM_INTEGRATION.md) là hợp đồng đề xuất để phần chat tiếp tục triển khai.
+Đã có GET/POST /chat/conversations, GET/DELETE /chat/conversations/{id} và POST /chat/message. Chat dùng phiên Bearer hiện tại; tạo/xóa/gửi yêu cầu cần Admin/Analyst, lịch sử chỉ cho chủ sở hữu. Xem [hợp đồng hiện hành, ví dụ và cách chạy FastAPI](CHAT_AI.md). API phân tích có cấu trúc và template vẫn giữ nguyên hợp đồng cũ.
