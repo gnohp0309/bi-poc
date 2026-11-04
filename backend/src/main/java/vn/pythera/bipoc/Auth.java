@@ -126,10 +126,18 @@ public class Auth {
     }
     @GetMapping("/groups") List<Map<String,Object>> groups(HttpServletRequest request) {
       auth.admin(auth.actor(request));
-      return db.queryForList("""
+      return db.query("""
           SELECT g.id,g.name,coalesce(array_agg(m.user_id) FILTER (WHERE m.user_id IS NOT NULL),'{}') AS members
           FROM app_groups g LEFT JOIN group_members m ON m.group_id=g.id GROUP BY g.id ORDER BY g.name
-          """);
+          """,(rs,row)->{
+        java.sql.Array array=rs.getArray("members");
+        List<String> members=List.of();
+        if(array!=null) {
+          try { members=Arrays.stream((Object[])array.getArray()).map(Object::toString).toList(); }
+          finally { array.free(); }
+        }
+        return Map.<String,Object>of("id",rs.getObject("id",UUID.class),"name",rs.getString("name"),"members",members);
+      });
     }
     @PostMapping("/groups") Map<String,Object> group(@RequestBody Map<String,Object> body,HttpServletRequest request) {
       Actor actor=auth.actor(request); auth.admin(actor); UUID id=UUID.randomUUID();

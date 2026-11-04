@@ -1,5 +1,6 @@
 """Propose dataset-scoped plans. This service never connects to a database."""
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Literal
@@ -193,10 +194,13 @@ def generate_plan(request: AnalyzeRequest) -> AIPlan:
                             headers={"X-AI-Error-Code": "MISSING_API_KEY"})
     # No automatic retry: one user action must not cause repeated paid requests.
     with genai.Client(api_key=key, http_options=types.HttpOptions(
-            timeout=25000, retry_options=types.HttpRetryOptions(attempts=1))) as client:
+            timeout=50000, retry_options=types.HttpRetryOptions(attempts=1))) as client:
         response = client.interactions.create(
             model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             input=build_prompt(request),
+            timeout=50.0,
+            automatic_continuation=False,
+            generation_config={"max_output_tokens":4096},
             response_format={"type": "text", "mime_type": "application/json",
                              "schema": GeneratedPlan.model_json_schema()},
         )
@@ -221,8 +225,15 @@ def analyze(request: AnalyzeRequest):
     except (ValidationError, json.JSONDecodeError):
         raise HTTPException(status_code=502, detail="AI trả cấu hình không hợp lệ; hãy thử hỏi rõ hơn",
                             headers={"X-AI-Error-Code": "INVALID_PLAN"})
-    except Exception:
-        # Provider errors can include sensitive request headers. Never return or log their text.
+    except Exception as error:
+        # Never log provider exception text: it may contain credentials or request headers.
+        status=getattr(error,"status_code",getattr(error,"code",None))
+        logging.getLogger(__name__).warning("Gemini request failed request_id=%s type=%s status=%s",
+            request.request_id,type(error).__name__,status if isinstance(status,int) else None)
+        if isinstance(error,TimeoutError) or type(error).__name__ in {
+                "ReadTimeout","ConnectTimeout","WriteTimeout","PoolTimeout","APITimeoutError"}:
+            raise HTTPException(status_code=504, detail="Gemini phản hồi quá lâu; vui lòng thử lại",
+                                headers={"X-AI-Error-Code":"PROVIDER_TIMEOUT"})
         raise HTTPException(status_code=502, detail="Không gọi được Gemini; kiểm tra model, API key, hạn mức hoặc kết nối",
                             headers={"X-AI-Error-Code": "PROVIDER_UNAVAILABLE"})
 

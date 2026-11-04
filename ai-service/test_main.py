@@ -83,7 +83,10 @@ class Plans(unittest.TestCase):
                 self.assertEqual("query", plan.intent)
                 self.assertEqual("selected-model", client.interactions.create.call_args.kwargs["model"])
                 self.assertEqual("application/json", client.interactions.create.call_args.kwargs["response_format"]["mime_type"])
-                self.assertEqual(25000, factory.call_args.kwargs["http_options"].timeout)
+                self.assertEqual(50000, factory.call_args.kwargs["http_options"].timeout)
+                self.assertEqual(50.0,client.interactions.create.call_args.kwargs["timeout"])
+                self.assertFalse(client.interactions.create.call_args.kwargs["automatic_continuation"])
+                self.assertEqual(4096,client.interactions.create.call_args.kwargs["generation_config"]["max_output_tokens"])
 
     def test_metadata_and_questions_are_data_in_prompt(self):
         body = request()
@@ -148,6 +151,13 @@ class Plans(unittest.TestCase):
             response = self.client.post("/analyze",json=request())
         self.assertEqual(502,response.status_code)
         self.assertEqual("INVALID_PLAN",response.headers["X-AI-Error-Code"])
+
+    def test_provider_timeout_has_stable_safe_error_code(self):
+        with patch("main.generate_plan",side_effect=httpx.ReadTimeout("API_KEY=private-secret")):
+            response=self.client.post("/analyze",json=request())
+        self.assertEqual(504,response.status_code)
+        self.assertEqual("PROVIDER_TIMEOUT",response.headers["X-AI-Error-Code"])
+        self.assertNotIn("private-secret",response.text)
 
 
 if __name__ == "__main__":

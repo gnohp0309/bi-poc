@@ -47,6 +47,8 @@ Viewer chỉ đọc danh sách/lịch sử hội thoại của mình; không t�
 
 Câu hỏi dài tối đa 4.000 ký tự; tên hội thoại 200, tên dashboard/biểu đồ 120. Thiếu quyền trả 403, sai sở hữu trả 404. Lỗi AI/config trả 502, gián đoạn 503, timeout 504; lỗi cột/cấu hình phân tích trả 400.
 
+Gemini được chờ tối đa 50 giây mỗi yêu cầu; Spring Boot chờ AI service tối đa 60 giây. Đặt timeout trực tiếp trên Interactions API, không chỉ cấu hình HTTP client. Không tự retry/continuation yêu cầu có thể tính phí, giới hạn 4.096 token đầu ra. Khi provider hết thời gian chờ, web báo timeout riêng; log chỉ ghi loại lỗi và request ID, không ghi key hoặc nội dung exception của provider.
+
 Spring Boot → POST /analyze của FastAPI:
 
 ~~~json
