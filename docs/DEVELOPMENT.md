@@ -1,6 +1,6 @@
 # Chạy và kiểm tra khi phát triển
 
-Hướng dẫn này dành cho source hiện tại trên Windows. Backend chính là Spring Boot, frontend React/TypeScript và database PostgreSQL. Dịch vụ AI chưa được triển khai.
+Hướng dẫn này dành cho source hiện tại trên Windows. Backend chính là Spring Boot, frontend React/TypeScript và database PostgreSQL. Chat AI chạy thêm FastAPI/Python 3.12 ở cổng 8000 và cần Gemini key riêng; xem [CHAT_AI](CHAT_AI.md). Các màn hình BI khác vẫn chạy độc lập.
 
 ## 1. Kiểm tra môi trường
 

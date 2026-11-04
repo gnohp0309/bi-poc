@@ -15,7 +15,7 @@ export type FileImport = {
 export type Conversation = { id: string; dataset_id: string; dataset_name: string; title: string; message_count: number; created_at: string; updated_at: string }
 export type ChatMessage = { id: string; role: 'user' | 'assistant' | 'system'; content: string; metadata_json: string; created_at: string }
 export type ConversationDetail = { id: string; dataset_id: string; title: string; created_at: string; updated_at: string; messages: ChatMessage[] }
-export type ChatResponse = { message_id: string; intent: string; answer: string; data?: QueryResult }
+export type ChatResponse = { message_id: string; intent: string; answer: string; data?: QueryResult; dashboard_id?: string }
 
 export async function uploadCsv(file: File, title: string): Promise<FileImport> {
   const form = new FormData()

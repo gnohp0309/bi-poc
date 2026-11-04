@@ -1,39 +1,18 @@
-# Script khởi động AI Service
-# Chạy: powershell -ExecutionPolicy Bypass -File .\start-ai-service.ps1
-
-$ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-Write-Host "==> Khởi động AI Service..." -ForegroundColor Cyan
-
-# Check Python
+$ErrorActionPreference = 'Stop'
+Push-Location $PSScriptRoot
 try {
-    $pythonVersion = python --version 2>&1
-    Write-Host "Python: $pythonVersion" -ForegroundColor Green
-} catch {
-    Write-Host "ERROR: Python không tìm thấy. Cài Python 3.8+ và thêm vào PATH." -ForegroundColor Red
-    exit 1
-}
-
-# Check .env file
-if (-not (Test-Path ".env")) {
-    Write-Host "ERROR: File .env không tồn tại." -ForegroundColor Red
-    Write-Host "Tạo file .env từ .env.example và điền GEMINI_API_KEY" -ForegroundColor Yellow
-    exit 1
-}
-
-# Check virtual environment
-if (-not (Test-Path "venv")) {
-    Write-Host "Tạo virtual environment..." -ForegroundColor Yellow
-    python -m venv venv
-}
-
-# Activate venv and install dependencies
-Write-Host "Cài đặt dependencies..." -ForegroundColor Yellow
-& "venv\Scripts\Activate.ps1"
-pip install -q -r requirements.txt
-
-# Start service
-Write-Host "==> AI Service đang chạy tại http://127.0.0.1:8082" -ForegroundColor Green
-Write-Host "Nhấn Ctrl+C để dừng" -ForegroundColor Yellow
-python main.py
+  $python = (Get-Command python.exe -ErrorAction Stop).Source
+  if (-not (Test-Path '.env') -and -not $env:GEMINI_API_KEY) {
+    throw 'Copy .env.example to .env and set GEMINI_API_KEY before starting.'
+  }
+  if (-not (Test-Path 'venv\Scripts\python.exe')) {
+    & $python -m venv venv
+    if ($LASTEXITCODE -ne 0) { throw 'Creating Python virtual environment failed.' }
+  }
+  $venvPython = Join-Path $PSScriptRoot 'venv\Scripts\python.exe'
+  & $venvPython -m pip install -r requirements.txt
+  if ($LASTEXITCODE -ne 0) { throw 'Installing AI service dependencies failed.' }
+  Write-Host 'Starting AI service (default http://127.0.0.1:8000; see SERVICE_PORT in .env).'
+  & $venvPython main.py
+  if ($LASTEXITCODE -ne 0) { throw 'AI service exited with an error.' }
+} finally { Pop-Location }

@@ -1,507 +1,108 @@
-# Chat AI - Tổng quan
+# Chat AI — phiên bản thử nghiệm
 
-## Giới thiệu
+Spring Boot giữ phiên đăng nhập, quyền, dataset và database. FastAPI gọi Gemini để đề xuất **cấu hình phân tích**, template hoặc biểu đồ; không sinh/thực thi SQL tự do. React hiển thị kết quả đã thực thi và mở dashboard đã lưu.
 
-Chat AI là tính năng cho phép người dùng tương tác với dữ liệu bằng ngôn ngữ tự nhiên (tiếng Việt/tiếng Anh). Thay vì viết SQL hoặc tạo biểu đồ thủ công, người dùng chỉ cần hỏi và AI sẽ xử lý.
+## Chạy trên Windows
 
-## Các tính năng chính
+1. Chạy web/PostgreSQL theo README. Nếu vừa pull code mới, dừng web rồi chạy lại dev/build-demo.ps1 trước khi dev/start-demo.ps1; script khởi động không tự build lại JAR đã tồn tại.
+2. Cài Python 3.12 và tạo cấu hình riêng:
 
-### 1. Truy vấn dữ liệu (Query)
+~~~powershell
+cd ai-service
+Copy-Item .env.example .env
+~~~
 
-**Mô tả:** Hỏi về dữ liệu và nhận câu trả lời trực tiếp.
+3. Điền Gemini API key của mình vào .env. Không commit hoặc gửi key vào chat. Giữ SERVICE_HOST=127.0.0.1, SERVICE_PORT=8000. GEMINI_MODEL mặc định là gemini-3.5-flash-lite, có thể đổi theo model được tài khoản cho phép dùng.
+4. Chạy ở terminal thứ hai:
 
-**Ví dụ:**
-- "Giá trung bình là bao nhiêu?"
-- "Top 5 sản phẩm đắt nhất"
-- "Tổng số hàng tồn kho"
-- "Sản phẩm nào có giá trên 50?"
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start-ai-service.ps1
+~~~
 
-**Flow:**
-```
-User: "Giá trung bình là bao nhiêu?"
-  ↓
-AI: Tạo SQL: SELECT AVG(unit_price) AS avg_price FROM {{table}}
-  ↓
-Backend: Execute SQL và format kết quả
-  ↓
-Response: "Giá trung bình: 28,450 VNĐ"
-```
+Backend mặc định gọi http://127.0.0.1:8000. Nếu đổi cổng, đặt POC_AI_SERVICE_URL cho backend và SERVICE_PORT cho FastAPI giống nhau, rồi khởi động lại hai dịch vụ.
 
-**Khả năng:**
-- Tính toán aggregate: SUM, AVG, COUNT, MAX, MIN
-- Filter và điều kiện: WHERE, HAVING
-- Sắp xếp: ORDER BY, LIMIT
-- Group by nhiều cột
-- Subquery và CTE
-- CASE WHEN điều kiện
+Chỉ phần chat cần FastAPI/Gemini key. SQL Lab, CSV, Chart Builder và dashboard thủ công vẫn chạy độc lập.
 
-### 2. Tạo Dashboard
+## Luồng demo
 
-**Mô tả:** Tự động tạo dashboard với nhiều biểu đồ từ yêu cầu ngôn ngữ tự nhiên.
+1. Đăng nhập Admin hoặc Analyst, vào **Chat AI**.
+2. Chọn dataset, bấm **Tạo cuộc hội thoại mới**.
+3. Với orders mẫu, hỏi “Tổng doanh thu là bao nhiêu?”, “Doanh thu theo vùng”, rồi “Còn trung bình?”.
+4. Hỏi “Tạo dashboard tổng quan doanh thu”. Nếu có đủ ngày/doanh thu/vùng/danh mục, AI chọn sales-overview.
+5. Bấm **Mở dashboard**, kiểm tra biểu đồ rồi quay lại Chat AI. Hội thoại và dữ liệu kết quả vẫn được giữ khi tải lại.
+6. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
+7. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
 
-**Ví dụ:**
-- "Tạo dashboard phân tích sản phẩm"
-- "Làm báo cáo doanh thu"
-- "Dashboard tổng quan cho tôi"
+Viewer chỉ đọc danh sách/lịch sử hội thoại của mình; không tạo/xóa hội thoại hoặc gửi yêu cầu phân tích. Không chia sẻ hội thoại giữa các tài khoản.
 
-**2 Phương pháp:**
+## Hợp đồng
 
-#### a) Template-based (Ưu tiên)
-Nếu dataset đáp ứng đủ yêu cầu của template, AI sẽ dùng template có sẵn.
+| Endpoint Spring Boot | Hành vi |
+| --- | --- |
+| GET /api/chat/conversations | Tối đa 50 hội thoại của tài khoản hiện tại |
+| POST /api/chat/conversations | {datasetId,title?} → {id}; Admin/Analyst |
+| GET /api/chat/conversations/{id} | Hội thoại và messages; tài khoản sở hữu |
+| POST /api/chat/message | {conversationId,message} → {message_id,intent,answer,data?,dashboard_id?}; Admin/Analyst |
+| DELETE /api/chat/conversations/{id} | Xóa hội thoại của mình; Admin/Analyst |
 
-**3 Templates:**
+Câu hỏi dài tối đa 4.000 ký tự; tên hội thoại 200, tên dashboard/biểu đồ 120. Thiếu quyền trả 403, sai sở hữu trả 404. Lỗi AI/config trả 502, gián đoạn 503, timeout 504; lỗi cột/cấu hình phân tích trả 400.
 
-1. **sales-overview** - Tổng quan doanh thu
-   - Yêu cầu: date, revenue, region, category
-   - Charts: Doanh thu theo tháng (line), theo vùng (bar), theo danh mục (pie)
+Spring Boot → POST /analyze của FastAPI:
 
-2. **product-analysis** - Phân tích sản phẩm
-   - Yêu cầu: product, revenue, quantity, category
-   - Charts: Doanh thu theo sản phẩm (bar), số lượng (bar), tỷ trọng theo danh mục (pie)
-
-3. **order-status** - Theo dõi đơn hàng
-   - Yêu cầu: date, revenue, status
-   - Charts: Số đơn theo trạng thái (pie), doanh thu theo trạng thái (bar), số đơn theo tháng (line)
-
-**Ví dụ:**
-```
-Dataset: order_date, amount, region, category
-User: "Tạo dashboard doanh thu"
-→ AI phát hiện khớp template "sales-overview"
-→ Tạo dashboard chuẩn với 3 biểu đồ
-```
-
-#### b) Custom Charts (Fallback)
-Nếu dataset không khớp template, AI tự đề xuất charts phù hợp.
-
-**Ví dụ:**
-```
-Dataset: product_name, unit_price, units_in_stock, category
-User: "Tạo dashboard phân tích sản phẩm"
-→ AI đề xuất:
-  1. Giá trung bình theo danh mục (bar)
-  2. Tồn kho theo danh mục (bar)
-  3. Phân bổ sản phẩm (pie)
-→ Tạo dashboard custom với 3 charts này
-```
-
-**Chart Types AI sử dụng:**
-- **bar**: So sánh giữa các nhóm
-- **line**: Xu hướng theo thời gian (với timeGrain: "month")
-- **pie**: Tỷ lệ phần trăm
-
-**Aggregates:**
-- **sum**: Tổng cộng
-- **avg**: Trung bình
-- **count**: Đếm số lượng (metric: "*")
-
-### 3. Làm rõ (Clarification)
-
-**Mô tả:** AI yêu cầu làm rõ khi câu hỏi không rõ ràng hoặc dataset không đủ thông tin.
-
-**Ví dụ:**
-```
-Dataset: product_id, price
-User: "Tạo dashboard"
-→ AI: "Dataset chỉ có 2 cột số. Để tạo dashboard hữu ích, 
-      cần thêm các cột như: tên sản phẩm, danh mục, ngày, hoặc vùng."
-```
-
-### 4. Quản lý cuộc hội thoại
-
-**Tính năng:**
-- Tạo cuộc hội thoại mới cho mỗi dataset
-- Lưu lịch sử tin nhắn
-- Context aware: AI hiểu ngữ cảnh từ câu hỏi trước
-- Conversation summary cho lịch sử dài
-
-**UI:**
-- Danh sách cuộc hội thoại
-- Chi tiết tin nhắn (user/assistant)
-- Metadata: số lượng kết quả, dashboard links
-- Scroll riêng cho danh sách và messages
-
-## Kiến trúc kỹ thuật
-
-### 1. AI Service (Python FastAPI)
-
-**Công nghệ:**
-- FastAPI
-- Google Gemini AI (gemini-3.5-flash-lite)
-- Pydantic models
-
-**Endpoint:** `POST /analyze`
-
-**Input:**
-```json
+~~~json
 {
-  "request_id": "uuid",
-  "dataset_name": "Products",
-  "columns": [
-    {"name": "product_name", "type": "TEXT", "sample_values": [...]},
-    {"name": "unit_price", "type": "NUMERIC", "sample_values": [...]}
+  "request_id":"request-uuid",
+  "dataset_name":"Đơn hàng",
+  "question":"Doanh thu theo vùng",
+  "columns":[
+    {"name":"region","type":"text","kind":"text","friendly_name":"Vùng","aggregates":["count","count_distinct"],"timeGrains":[]},
+    {"name":"amount","type":"numeric","kind":"number","friendly_name":"Doanh thu","aggregates":["sum","avg","min","max","count","count_distinct"],"timeGrains":[]}
   ],
-  "question": "Giá trung bình là bao nhiêu?",
-  "conversation_history": [...],
-  "conversation_summary": "..."
+  "conversation_history":[]
 }
-```
+~~~
 
-**Output (Query):**
-```json
-{
-  "intent": "query",
-  "sql": "SELECT AVG(unit_price) AS avg_price FROM {{table}}",
-  "template": "Giá trung bình: {{avg_price}}",
-  "explanation": "Tính giá trung bình"
-}
-```
+FastAPI → Spring Boot:
 
-**Output (Dashboard - Template):**
-```json
+~~~json
 {
-  "intent": "create_dashboard",
-  "useTemplate": true,
-  "templateId": "sales-overview",
-  "dashboard_name": "Dashboard Doanh Thu",
-  "mapping": {
-    "date": "order_date",
-    "revenue": "amount",
-    "region": "region",
-    "category": "category"
+  "request_id":"request-uuid",
+  "intent":"query",
+  "query_config":{
+    "groupBy":[{"column":"region"}],
+    "metrics":[{"column":"amount","aggregate":"sum","alias":"revenue"}],
+    "orderBy":[{"column":"revenue","direction":"desc"}],
+    "limit":100
   }
 }
-```
+~~~
 
-**Output (Dashboard - Custom):**
-```json
-{
-  "intent": "create_dashboard",
-  "useTemplate": false,
-  "dashboard_name": "Dashboard Phân Tích",
-  "charts": [
-    {
-      "name": "Giá trung bình theo danh mục",
-      "chartType": "bar",
-      "dimension": "category",
-      "metric": "unit_price",
-      "aggregate": "avg"
-    }
-  ]
-}
-```
+query_config dùng đúng [DATA_ANALYSIS](DATA_ANALYSIS.md): tối đa 3 chiều, 5 chỉ số, 10 bộ lọc AND, 500 dòng đầu ra; tổng hợp trên toàn bộ dataset trước khi giới hạn. SQL bên trong dataset ảo vẫn quyết định phạm vi nguồn. Không nhận sql, table, computed_metrics hay hàm tùy ý từ AI. Phân tích dữ liệu thô từng dòng/công thức ngoài hợp đồng cần hỏi rõ hoặc dùng SQL Lab thủ công.
 
-### 2. Backend (Spring Boot)
+Intent create_dashboard dùng dashboard_name, useTemplate=true, templateId, mapping theo [DASHBOARD_TEMPLATES](DASHBOARD_TEMPLATES.md); hoặc useTemplate=false, charts từ 2–4 cấu hình {name,chartType,dimension,metric,aggregate,timeGrain?}. Không cho biểu đồ tự đổi dataset. Kiểm tra toàn bộ trước khi lưu, và rollback cả chart/dashboard/message nếu có lỗi lưu.
 
-**Service:** `Chat.java`
+Intent clarify dùng clarification. Câu trả lời **query** được dựng từ các dòng kết quả thật, không dùng nội dung số liệu AI tự viết. Số BigDecimal giữ phần lẻ/độ chính xác; NULL hiển thị NULL. metadata_json của tin nhắn lưu dữ liệu kết quả hoặc dashboard_id để mở lại.
 
-**Dependencies:**
-- JdbcTemplate (database)
-- Datasets, Queries (data access)
-- Charts, Dashboards (visualization)
-- DashboardTemplates (template-based creation)
-- HttpClient (AI service communication)
+Chỉ gửi metadata và 10 tin nhắn gần nhất, không gửi mật khẩu kết nối hoặc toàn bộ bảng/sample rows sang Gemini. Tin nhắn gần nhất có cấu hình phân tích để nối ngữ cảnh. Chưa có tóm tắt dài hạn; hội thoại cũ hơn 10 tin nhắn có thể mất ngữ cảnh đối với model.
 
-**Flow xử lý:**
+## Schema và nâng cấp
 
-```java
-1. Nhận message từ user
-2. Get dataset metadata (columns, types, samples)
-3. Get aliases cho friendly column names
-4. Get conversation history (last 10 messages)
-5. Summarize older messages nếu có
-6. Gửi request đến AI service
-7. Xử lý response theo intent:
-   - query: Execute SQL, format answer
-   - create_dashboard:
-     * useTemplate=true: Gọi DashboardTemplates.create()
-     * useTemplate=false: Tạo charts → dashboard → layout
-   - clarify: Trả message từ AI
-8. Save assistant message với metadata
-9. Update conversation timestamp
-```
+schema.sql tự tạo conversations, chat_messages khi Spring Boot khởi động. Có thể tham khảo cùng DDL ở schema-chat.sql; không cần chạy thủ công nếu khởi động bình thường.
 
-**SQL Safety:**
-- Whitelist approach: chỉ cho phép SELECT
-- Blacklist keywords: DROP, DELETE, INSERT, UPDATE, etc.
-- Validate balanced quotes và parentheses
-- Timeout: 30 seconds
-- Read-only transaction
+chat_messages.metadata_json là TEXT chứa JSON, không phải cột JSONB. Bổ sung sequence BIGINT GENERATED ALWAYS AS IDENTITY bằng ALTER TABLE ... IF NOT EXISTS để sắp xếp ổn định khi user/assistant cùng timestamp. Lịch sử/dữ liệu demo cũ được giữ.
 
-**Error Handling:**
-- Technical errors ẩn khỏi frontend
-- User-friendly messages
-- Continue on partial failures (dashboard creation)
-- Graceful degradation
+## Kiểm thử và phần chưa kiểm chứng
 
-### 3. Database Schema
+~~~powershell
+python -m pip install -r ai-service/requirements-test.txt
+python -m unittest discover -s ai-service -p test_main.py -v
+mvn -f backend/pom.xml verify
+~~~
 
-**conversations:**
-```sql
-id UUID PRIMARY KEY
-user_id UUID NOT NULL
-dataset_id UUID NOT NULL
-title VARCHAR(200)
-created_at TIMESTAMP
-updated_at TIMESTAMP
-```
+CI còn chạy Spring Boot + PostgreSQL + FastAPI thật với provider **giả lập** dev/chat-test-ai.py, rồi dev/smoke-chat.py trên database dùng riêng. Kiểm tra tổng hợp, nối hội thoại, số lẻ, ký tự đặc biệt, chặn SQL/cột ngoài dataset, metadata rỗng/NULL, template/custom, quyền/sở hữu, lỗi provider và rollback sau khi dashboard đã được insert.
 
-**chat_messages:**
-```sql
-id UUID PRIMARY KEY
-conversation_id UUID NOT NULL
-role VARCHAR(20) -- 'user' | 'assistant'
-content TEXT
-metadata_json JSONB
-created_at TIMESTAMP
-```
+Không chạy smoke-chat.py vào database đang dùng để demo: bài rollback có trigger thử lỗi. Không dùng chat-test-ai.py cho video demo rồi coi đó là Gemini thật.
 
-**Metadata structure:**
-```json
-{
-  "intent": "query",
-  "has_data": true,
-  "row_count": 5,
-  "dashboard_id": "uuid",
-  "dashboard_name": "...",
-  "chart_count": 3,
-  "method": "template" | "custom",
-  "template_id": "sales-overview"
-}
-```
+**Kiểm thử provider giả lập không chứng minh chất lượng Gemini, quyền truy cập model, key, quota hoặc độ trễ thực tế.** Cần điền key riêng và chạy các câu hỏi demo trên trước khi báo cáo rằng luồng Gemini đã được xác nhận. API/schema validation cũng không bảo đảm AI chọn đúng ý nghĩa cột; phải đối chiếu phép tính và biểu đồ.
 
-### 4. Frontend (React TypeScript)
-
-**Component:** `chat.tsx`
-
-**Features:**
-- Conversation list với scroll riêng
-- Chat messages với scroll riêng
-- Toggle hide/show sidebar
-- Optimistic UI updates
-- Error handling (hide technical errors)
-- Metadata display (row count, dashboard links)
-
-**State management:**
-```typescript
-conversations: Conversation[]
-selectedConv: Conversation | null
-message: string
-busy: boolean
-status: string
-sidebarHidden: boolean
-```
-
-**CSS highlights:**
-- Two-column layout (wide-left)
-- Full-width mode khi sidebar hidden
-- Max-height + scroll cho lists
-- Responsive (mobile friendly)
-
-## Quy trình sử dụng
-
-### Tạo cuộc hội thoại mới
-
-1. Chọn dataset từ danh sách
-2. Click "Tạo mới"
-3. Cuộc hội thoại được tạo với title mặc định
-
-### Hỏi về dữ liệu
-
-1. Nhập câu hỏi: "Giá trung bình là bao nhiêu?"
-2. AI sinh SQL và execute
-3. Nhận câu trả lời: "Giá trung bình: 28,450 VNĐ"
-
-### Tạo dashboard
-
-1. Nhập yêu cầu: "Tạo dashboard phân tích sản phẩm"
-2. AI phân tích dataset:
-   - Nếu khớp template → dùng template
-   - Nếu không → tự tạo charts
-3. Dashboard được tạo tự động
-4. Click link để xem dashboard
-
-### Context-aware queries
-
-```
-User: "Giá trung bình là bao nhiêu?"
-AI: "Giá trung bình: 28,450 VNĐ"
-
-User: "Còn giá cao nhất?"
-AI: (hiểu "giá cao nhất" dựa vào context)
-    "Giá cao nhất: 263,500 VNĐ"
-```
-
-## Ưu điểm
-
-### So với cách truyền thống:
-
-| Truyền thống | Chat AI |
-|--------------|---------|
-| Viết SQL thủ công | Hỏi bằng ngôn ngữ tự nhiên |
-| Tạo từng chart thủ công | Tạo dashboard tự động |
-| Phải biết cấu trúc database | Chỉ cần biết muốn gì |
-| Mất nhiều thời gian | Nhanh chóng, tức thì |
-| Cần kỹ năng technical | Ai cũng dùng được |
-
-### Template vs Custom:
-
-| Template | Custom |
-|----------|--------|
-| ✅ Layout chuẩn, đẹp | ⚠️ Layout tùy AI |
-| ✅ Nhanh (predefined) | ⚠️ Chậm hơn (tạo từng chart) |
-| ❌ Chỉ 3 templates | ✅ Vô hạn possibilities |
-| ❌ Cần dataset phù hợp | ✅ Linh hoạt mọi dataset |
-
-## Hạn chế & tương lai
-
-### Hạn chế hiện tại:
-
-1. **AI không hoàn hảo:**
-   - Đôi khi hiểu sai câu hỏi
-   - Có thể tạo SQL không tối ưu
-   - Cần prompt engineering tốt
-
-2. **Template hạn chế:**
-   - Chỉ 3 templates
-   - Cần thêm nhiều templates cho nhiều use cases
-
-3. **Chart types:**
-   - Chỉ bar, line, pie
-   - Chưa có scatter, area, heatmap
-
-4. **Filters:**
-   - Chưa có auto-suggest filters
-   - Chưa có cross-chart filtering
-
-### Tương lai:
-
-1. **Thêm chart types:**
-   - Scatter plot
-   - Area chart
-   - Heatmap
-   - Gauge, KPI cards
-
-2. **Advanced features:**
-   - Multi-dataset queries (JOIN)
-   - Saved queries/reports
-   - Scheduled reports
-   - Export to PDF/Excel
-
-3. **Collaboration:**
-   - Share conversations
-   - Comment on dashboards
-   - Team workspaces
-
-4. **AI improvements:**
-   - Better context understanding
-   - Learn from user feedback
-   - Suggest next questions
-   - Auto-detect anomalies
-
-## Testing
-
-### Test cases cơ bản:
-
-**Query:**
-```
-1. "Giá trung bình là bao nhiêu?"
-   → Expect: SQL với AVG(), trả về số
-
-2. "Top 5 sản phẩm đắt nhất"
-   → Expect: SQL với ORDER BY ... DESC LIMIT 5
-
-3. "Sản phẩm có giá trên 50"
-   → Expect: SQL với WHERE unit_price > 50
-```
-
-**Dashboard - Template:**
-```
-Dataset: order_date, amount, region, category
-Question: "Tạo dashboard doanh thu"
-Expected: useTemplate=true, templateId="sales-overview"
-Result: Dashboard với 3 charts (line + bar + pie)
-```
-
-**Dashboard - Custom:**
-```
-Dataset: product_name, unit_price, units_in_stock, category
-Question: "Dashboard phân tích sản phẩm"
-Expected: useTemplate=false, 2-4 custom charts
-Result: Dashboard với charts AI đề xuất
-```
-
-**Clarification:**
-```
-Dataset: id, value (chỉ 2 cột số)
-Question: "Tạo dashboard"
-Expected: intent="clarify"
-Result: AI yêu cầu thêm cột
-```
-
-### Test edge cases:
-
-1. Dataset không có cột TEXT → không tạo được pie/bar
-2. Dataset không có cột DATE → không tạo được line chart
-3. Câu hỏi mơ hồ → AI clarify
-4. SQL phức tạp → test performance
-5. Dataset rất lớn → test timeout
-
-## Monitoring & Logs
-
-### Backend logs:
-
-```
-=== SENDING TO AI ===
-Columns metadata: 11 columns
-  - product_name (TEXT)
-  - unit_price (NUMERIC)
-  ...
-
-=== SQL FROM AI ===
-Template: SELECT AVG(unit_price) AS avg_price FROM {{table}}
-Actual SQL: SELECT AVG(unit_price) AS avg_price FROM products
-Template: Giá trung bình: {{avg_price}}
-
-=== RESULT ===
-Rows: 1
-Answer: Giá trung bình: 28,450
-
-=== USING TEMPLATE ===
-Template: sales-overview
-Mapping: {date=order_date, revenue=amount, ...}
-
-=== CREATING CUSTOM DASHBOARD ===
-Dashboard name: Dashboard Phân Tích
-Charts: 3
-Creating chart: Giá trung bình theo danh mục
-  Created chart: uuid
-```
-
-### Metrics cần theo dõi:
-
-- Response time AI service
-- SQL execution time
-- Success rate (query vs clarify)
-- Dashboard creation success rate
-- Template vs custom ratio
-- User engagement (messages per conversation)
-
-## Kết luận
-
-Chat AI là bước tiến lớn trong việc dân chủ hóa data analysis. Người dùng không cần biết SQL hay cách tạo biểu đồ, chỉ cần hỏi và AI sẽ lo.
-
-**Key takeaways:**
-- ✅ Natural language interface
-- ✅ Auto SQL generation với safety
-- ✅ Smart dashboard creation (template + custom)
-- ✅ Context-aware conversations
-- ✅ User-friendly error handling
-- ✅ Graceful degradation
-
-**Next steps:**
-- Thêm chart types
-- Cải thiện AI prompts
-- Thêm templates
-- Advanced filtering
-- Collaboration features
+AI service dùng Google GenAI SDK và JSON Schema theo [tài liệu thư viện chính thức](https://ai.google.dev/gemini-api/docs/libraries) và [structured outputs](https://ai.google.dev/gemini-api/docs/structured-output). main_v2.py chỉ là entry point tương thích cho cùng implementation, không còn đường chạy SQL khác.

@@ -10,7 +10,7 @@ Nhóm phát triển một sản phẩm chung. Mỗi người có bản clone và
 | Chat AI hỏi đáp dữ liệu | `feature/ai-chat` | Dịch vụ FastAPI mới, giao diện chat |
 | Dashboard theo template | `feature/dashboard-templates` | Dashboard React, API/template Spring Boot |
 
-Đây là phân công đề xuất; nhóm xác nhận người phụ trách trước khi bắt đầu. FastAPI chưa có trong repo. Xem [ranh giới tích hợp](docs/TEAM_INTEGRATION.md).
+Xem [ranh giới tích hợp](docs/TEAM_INTEGRATION.md) và [Chat AI/FastAPI](docs/CHAT_AI.md). Mỗi máy tự cấu hình Gemini key trong ai-service/.env; không commit hoặc chia sẻ key qua Git.
 
 ## Bắt đầu một phần việc
 

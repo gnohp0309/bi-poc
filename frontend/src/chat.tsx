@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { api, formatNumber } from './api'
-import type { Dataset, Conversation, ConversationDetail, ChatResponse } from './api'
+import { api } from './api'
+import type { Dataset, Conversation, ConversationDetail, ChatResponse, QueryResult } from './api'
 import { Empty, SectionTitle, DataTable } from './ui'
 
 type Done = (message: string) => void
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
 
-export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }) {
+export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets: Dataset[]; canEdit: boolean; done: Done; openDashboard: (id: string) => void }) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConv, setSelectedConv] = useState<ConversationDetail | null>(null)
   const [datasetId, setDatasetId] = useState('')
@@ -33,7 +33,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
   }
 
   async function createConversation() {
-    if (!datasetId) return
+    if (!datasetId || !canEdit || busy) return
     try {
       const dataset = datasets.find(d => d.id === datasetId)
       const title = `Chat: ${dataset?.name || 'Dataset'}`
@@ -71,7 +71,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedConv || !message.trim() || busy) return
+    if (!selectedConv || !message.trim() || busy || !canEdit) return
 
     setBusy(true)
     setStatus('')
@@ -101,9 +101,9 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
       // Reload conversation to get updated messages
       await openConversation(selectedConv.id)
       await loadConversations() // Update list timestamps
+      if (response.dashboard_id) done('Đã tạo dashboard từ hội thoại.')
     } catch (e) {
-      // Show user-friendly error message only
-      setStatus('Xin lỗi, không thể xử lý câu hỏi của bạn lúc này. Vui lòng thử lại.')
+      setStatus(errorText(e))
       setMessage(userMessage) // Restore message on error
       // Remove optimistic message on error
       setSelectedConv(prev => prev ? {
@@ -122,6 +122,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
       <section className={`surface chat-main ${sidebarHidden ? 'full-width' : ''}`}>
         <div className="panel-head">
           <SectionTitle label="Chat AI" />
+          {selectedConv && <button className="text-link" disabled={busy} onClick={() => { setSelectedConv(null); setStatus('') }}>Hội thoại mới</button>}
           <button className="text-link" onClick={() => setSidebarHidden(!sidebarHidden)}>
             {sidebarHidden ? '☰ Hiện danh sách' : '⇄ Ẩn danh sách'}
           </button>
@@ -147,7 +148,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
               </label>
               <button
                 className="primary-button"
-                disabled={!datasetId}
+                disabled={!datasetId || !canEdit || busy}
                 onClick={createConversation}
               >
                 Tạo cuộc hội thoại mới
@@ -163,6 +164,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
               </div>
               <button
                 className="text-link danger"
+                disabled={busy || !canEdit}
                 onClick={() => deleteConversation(selectedConv.id)}
                 title="Xóa cuộc hội thoại"
               >
@@ -187,18 +189,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
                         <p key={i}>{line}</p>
                       ))}
                     </div>
-                    {msg.role === 'assistant' && msg.metadata_json && (() => {
-                      try {
-                        const metadata = JSON.parse(msg.metadata_json)
-                        return metadata.has_data && metadata.row_count > 0 ? (
-                          <div className="message-meta">
-                            <span className="tag">{metadata.row_count} kết quả</span>
-                          </div>
-                        ) : null
-                      } catch {
-                        return null
-                      }
-                    })()}
+                    {msg.role === 'assistant' && <ChatResult metadataJson={msg.metadata_json} openDashboard={openDashboard} />}
                   </div>
                 ))
               )}
@@ -217,9 +208,11 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
                 value={message}
                 onChange={e => setMessage(e.target.value)}
                 placeholder="Nhập câu hỏi về dữ liệu..."
-                disabled={busy}
+                aria-label="Câu hỏi dữ liệu"
+                maxLength={4000}
+                disabled={busy || !canEdit}
               />
-              <button type="submit" className="primary-button" disabled={!message.trim() || busy}>
+              <button type="submit" className="primary-button" disabled={!message.trim() || busy || !canEdit}>
                 {busy ? 'Đang gửi...' : 'Gửi'}
               </button>
             </form>
@@ -253,7 +246,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
             </label>
             <button
               className="primary-button"
-              disabled={!datasetId}
+              disabled={!datasetId || !canEdit || busy}
               onClick={createConversation}
             >
               Tạo mới
@@ -266,6 +259,7 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
             conversations.map(conv => (
               <button
                 key={conv.id}
+                disabled={busy}
                 className={`list-row clickable full-row ${selectedConv?.id === conv.id ? 'active' : ''}`}
                 onClick={() => openConversation(conv.id)}
               >
@@ -285,4 +279,14 @@ export function ChatPage({ datasets, done }: { datasets: Dataset[]; done: Done }
       )}
     </div>
   )
+}
+
+function ChatResult({ metadataJson, openDashboard }: { metadataJson: string; openDashboard: (id: string) => void }) {
+  try {
+    const metadata = JSON.parse(metadataJson) as { dashboard_id?: string; data?: QueryResult }
+    return <div className="message-meta">
+      {metadata.dashboard_id && /^[0-9a-f-]{36}$/i.test(metadata.dashboard_id) && <button className="secondary-button" onClick={() => openDashboard(metadata.dashboard_id!)}>Mở dashboard</button>}
+      {metadata.data && <DataTable result={metadata.data} max={500} />}
+    </div>
+  } catch { return null }
 }

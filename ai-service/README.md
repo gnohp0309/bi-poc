@@ -1,81 +1,30 @@
-# AI Service - Chat AI cho BI POC
+# FastAPI cho Chat AI
 
-Service FastAPI sử dụng Gemini API để phân tích câu hỏi người dùng và trả về cấu hình truy vấn có cấu trúc.
+Dịch câu hỏi thành cấu hình JSON được Spring Boot kiểm tra/thực thi. Không kết nối PostgreSQL và không thực thi SQL.
 
-## Yêu cầu
+Yêu cầu Python 3.12. Từ thư mục này:
 
-- Python 3.8+
-- Gemini API Key (lấy tại https://aistudio.google.com/app/apikey)
+~~~powershell
+Copy-Item .env.example .env
+# Điền GEMINI_API_KEY trong .env, không commit file này.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start-ai-service.ps1
+~~~
 
-## Cài đặt
+Mặc định 127.0.0.1:8000, tương ứng POC_AI_SERVICE_URL của Spring Boot. Model cấu hình bằng GEMINI_MODEL; thiếu key trả 503 khi gửi câu hỏi. Các màn hình BI khác không cần service này.
 
-1. Tạo môi trường ảo và cài đặt dependencies:
+Cài/chạy thủ công:
 
-```bash
-cd ai-service
+~~~powershell
 python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Linux/Mac
-pip install -r requirements.txt
-```
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe main.py
+~~~
 
-2. Tạo file `.env` từ template:
+Chạy test không gọi Gemini:
 
-```bash
-copy .env.example .env  # Windows
-# cp .env.example .env  # Linux/Mac
-```
+~~~powershell
+.\venv\Scripts\python.exe -m pip install -r requirements-test.txt
+.\venv\Scripts\python.exe -m unittest discover -s . -p test_main.py -v
+~~~
 
-3. Mở `.env` và điền Gemini API Key:
-
-```
-GEMINI_API_KEY=your_actual_api_key_here
-```
-
-## Chạy service
-
-```bash
-python main.py
-```
-
-Service sẽ chạy tại http://127.0.0.1:8082
-
-## API Endpoints
-
-### `GET /`
-Health check
-
-### `POST /analyze`
-Phân tích câu hỏi người dùng
-
-**Request:**
-```json
-{
-  "request_id": "uuid",
-  "question": "Tổng doanh thu là bao nhiêu?",
-  "dataset_name": "Doanh thu bán hàng",
-  "columns": [
-    {"name": "region", "type": "TEXT", "sample_values": ["Bắc", "Nam"]},
-    {"name": "amount", "type": "NUMERIC", "sample_values": [100000, 200000]}
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "request_id": "uuid",
-  "intent": "query",
-  "query_config": {
-    "dimension": null,
-    "metric": "amount",
-    "aggregate": "sum",
-    "chart_type": null
-  },
-  "explanation_template": "Tổng doanh thu là {{value}}"
-}
-```
-
-## Tích hợp với Spring Boot
-
-Backend Spring Boot gọi service này qua endpoint `/analyze`. URL cấu hình qua biến môi trường `POC_AI_SERVICE_URL` (mặc định http://127.0.0.1:8082).
+Xem [hợp đồng, luồng demo, giới hạn và kiểm thử](../docs/CHAT_AI.md).

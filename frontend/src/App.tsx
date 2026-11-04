@@ -90,7 +90,7 @@ export default function App() {
       <main className="main-content">
         <div className="page-heading"><div><span className="eyebrow">BI DASHBOARD / BẢN THỬ NGHIỆM</span><h1>{active.label}</h1><p>{descriptions[page]}</p></div><span className="page-number">{active.number} / 08</span></div>
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
-        {actor.role === 'VIEWER' && page !== 'chat' && <div className="notice" role="status">Chế độ chỉ xem: tài khoản này không thể tạo, sửa hoặc xóa dữ liệu.</div>}
+        {actor.role === 'VIEWER' && <div className="notice" role="status">Chế độ chỉ xem: tài khoản này không thể tạo, sửa hoặc xóa dữ liệu.</div>}
         {page === 'overview' && <Overview counts={[connections.length,datasets.length,charts.length,dashboards.length]} go={setPage} dashboards={dashboards} />}
         {page === 'imports' && <ImportsPage canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
         {page === 'connections' && <ConnectionsPage connections={connections} done={done} />}
@@ -98,7 +98,7 @@ export default function App() {
         {page === 'sql' && <SqlPage connections={connections} done={done} />}
         {page === 'charts' && <ChartsPage datasets={datasets} charts={charts} done={done} />}
         {page === 'dashboards' && <DashboardsPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}
-        {page === 'chat' && <ChatPage datasets={datasets} done={done} />}
+        {page === 'chat' && <ChatPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
         {page === 'security' && <SecurityPage />}
       </main>
     </div>

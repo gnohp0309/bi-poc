@@ -49,7 +49,9 @@ Mỗi người clone repo về máy riêng, tạo nhánh chức năng và gửi 
 
 Phần backend có [API metadata và phân tích dataset](docs/DATA_ANALYSIS.md) để tích hợp hỏi đáp dữ liệu: đọc cấu trúc cột và tổng hợp/lọc theo cấu hình JSON có kiểm soát.
 
-**Dashboard theo template đã có ba mẫu: Tổng quan doanh thu, Phân tích sản phẩm bán ra và Theo dõi trạng thái đơn hàng**, xem [hướng dẫn BA-25](docs/DASHBOARD_TEMPLATES.md). Chat AI và tạo dashboard qua chat chưa triển khai. [Hợp đồng tích hợp](docs/TEAM_INTEGRATION.md) mô tả cách nối các phần trong nhóm.
+**Dashboard theo template có ba mẫu: Tổng quan doanh thu, Phân tích sản phẩm bán ra và Theo dõi trạng thái đơn hàng**, xem [hướng dẫn BA-25](docs/DASHBOARD_TEMPLATES.md).
+
+**Chat AI** cho Admin/Analyst hỏi số liệu và đề xuất dashboard theo template hoặc 2–4 biểu đồ custom. Phần này cần chạy thêm FastAPI/Python 3.12 và cấu hình Gemini API key riêng; các màn hình BI khác vẫn chạy độc lập. Xem [cách chạy, hợp đồng và giới hạn kiểm chứng Chat AI](docs/CHAT_AI.md). Bộ test tự động dùng provider giả lập, không thay thế việc chạy thử Gemini bằng key thật.
 
 ## Giới hạn của bản thử nghiệm
 
