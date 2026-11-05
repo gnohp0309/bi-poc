@@ -29,7 +29,7 @@ Chỉ phần chat cần FastAPI/Gemini key. SQL Lab, CSV, Chart Builder và dash
 2. Chọn dataset, bấm **Tạo cuộc hội thoại mới**.
 3. Với orders mẫu, hỏi “Tổng doanh thu là bao nhiêu?”, “Doanh thu theo vùng”, rồi “Còn trung bình?”.
 4. Hỏi “Tạo dashboard tổng quan doanh thu”. Nếu có đủ ngày/doanh thu/vùng/danh mục, AI chọn sales-overview.
-5. Bấm **Mở dashboard**, kiểm tra biểu đồ rồi quay lại Chat AI. Hội thoại và dữ liệu kết quả vẫn được giữ khi tải lại.
+5. Các biểu đồ hiện ngay dưới tin nhắn tạo dashboard, trong cùng khung chat. Bấm **Mở dashboard đầy đủ** khi cần lọc/chỉnh bố cục. Mở lại hội thoại cũ vẫn tải các biểu đồ từ dashboard đã lưu, không gọi lại Gemini. Nếu dashboard đã bị xóa hoặc nguồn lỗi, chat hiển thị thông báo và nút tải lại thay vì mất nội dung hội thoại.
 6. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
 7. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
 
@@ -46,6 +46,8 @@ Viewer chỉ đọc danh sách/lịch sử hội thoại của mình; không t�
 | DELETE /api/chat/conversations/{id} | Xóa hội thoại của mình; Admin/Analyst |
 
 Câu hỏi dài tối đa 4.000 ký tự; tên hội thoại 200, tên dashboard/biểu đồ 120. Thiếu quyền trả 403, sai sở hữu trả 404. Lỗi AI/config trả 502, gián đoạn 503, timeout 504; lỗi cột/cấu hình phân tích trả 400.
+
+Gemini được chờ tối đa 50 giây mỗi yêu cầu; Spring Boot chờ AI service tối đa 60 giây. Đặt timeout trực tiếp trên Interactions API, không chỉ cấu hình HTTP client. Không tự retry/continuation yêu cầu có thể tính phí, giới hạn 4.096 token đầu ra. Khi provider hết thời gian chờ, web báo timeout riêng; log chỉ ghi loại lỗi và request ID, không ghi key hoặc nội dung exception của provider.
 
 Spring Boot → POST /analyze của FastAPI:
 
@@ -82,6 +84,10 @@ query_config dùng đúng [DATA_ANALYSIS](DATA_ANALYSIS.md): tối đa 3 chiều
 Intent create_dashboard dùng dashboard_name, useTemplate=true, templateId, mapping theo [DASHBOARD_TEMPLATES](DASHBOARD_TEMPLATES.md); hoặc useTemplate=false, charts từ 2–4 cấu hình {name,chartType,dimension,metric,aggregate,timeGrain?}. Không cho biểu đồ tự đổi dataset. Kiểm tra toàn bộ trước khi lưu, và rollback cả chart/dashboard/message nếu có lỗi lưu.
 
 Intent clarify dùng clarification. Câu trả lời **query** được dựng từ các dòng kết quả thật, không dùng nội dung số liệu AI tự viết. Số BigDecimal giữ phần lẻ/độ chính xác; NULL hiển thị NULL. metadata_json của tin nhắn lưu dữ liệu kết quả hoặc dashboard_id để mở lại.
+
+Ở giao tiếp nội bộ với Gemini, kết quả được bọc trong decision và có schema riêng cho query, template, custom, clarify. Mỗi nhánh bắt buộc đủ trường ngay khi sinh JSON; template cần tên/cách tạo/mẫu/ánh xạ, custom cần tên/cách tạo/2–4 biểu đồ. FastAPI chuẩn hóa lại thành response phẳng ở trên, nên frontend/Spring Boot không đổi hợp đồng.
+
+Lỗi cấu hình AI không hợp lệ được phân biệt với lỗi key/provider bằng header nội bộ X-AI-Error-Code. Web hiển thị thông báo phù hợp, không chuyển nguyên chẩn đoán riêng của provider ra trình duyệt.
 
 Chỉ gửi metadata và 10 tin nhắn gần nhất, không gửi mật khẩu kết nối hoặc toàn bộ bảng/sample rows sang Gemini. Tin nhắn gần nhất có cấu hình phân tích để nối ngữ cảnh. Chưa có tóm tắt dài hạn; hội thoại cũ hơn 10 tin nhắn có thể mất ngữ cảnh đối với model.
 

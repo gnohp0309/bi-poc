@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Dataset, Conversation, ConversationDetail, ChatResponse, QueryResult } from './api'
 import { Empty, SectionTitle, DataTable } from './ui'
+import { ChatDashboard } from './chat-dashboard'
 
 type Done = (message: string) => void
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
@@ -118,7 +119,7 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   const selectedDataset = datasets.find(d => d.id === datasetId)
 
   return (
-    <div className="two-column wide-left">
+    <div className={'two-column wide-left chat-layout' + (sidebarHidden ? ' without-sidebar' : '')}>
       <section className={`surface chat-main ${sidebarHidden ? 'full-width' : ''}`}>
         <div className="panel-head">
           <SectionTitle label="Chat AI" />
@@ -285,7 +286,7 @@ function ChatResult({ metadataJson, openDashboard }: { metadataJson: string; ope
   try {
     const metadata = JSON.parse(metadataJson) as { dashboard_id?: string; data?: QueryResult }
     return <div className="message-meta">
-      {metadata.dashboard_id && /^[0-9a-f-]{36}$/i.test(metadata.dashboard_id) && <button className="secondary-button" onClick={() => openDashboard(metadata.dashboard_id!)}>Mở dashboard</button>}
+      {typeof metadata.dashboard_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(metadata.dashboard_id) && <ChatDashboard id={metadata.dashboard_id} openDashboard={openDashboard} />}
       {metadata.data && <DataTable result={metadata.data} max={500} />}
     </div>
   } catch { return null }
