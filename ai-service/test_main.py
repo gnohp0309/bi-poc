@@ -1,4 +1,5 @@
 import os
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -77,12 +78,15 @@ class Plans(unittest.TestCase):
         with patch.dict(os.environ, {"GEMINI_API_KEY":"test-only", "GEMINI_MODEL":"selected-model"}):
             with patch("main.genai.Client") as factory:
                 client = factory.return_value.__enter__.return_value
-                client.interactions.create.return_value = SimpleNamespace(output_text=main.AIPlan.model_validate(query()).model_dump_json())
+                client.interactions.create.return_value = SimpleNamespace(output_text=json.dumps({"decision":query()}))
                 plan = main.generate_plan(main.AnalyzeRequest.model_validate(request()))
                 self.assertEqual("query", plan.intent)
                 self.assertEqual("selected-model", client.interactions.create.call_args.kwargs["model"])
                 self.assertEqual("application/json", client.interactions.create.call_args.kwargs["response_format"]["mime_type"])
-                self.assertEqual(25000, factory.call_args.kwargs["http_options"].timeout)
+                self.assertEqual(50000, factory.call_args.kwargs["http_options"].timeout)
+                self.assertEqual(50.0,client.interactions.create.call_args.kwargs["timeout"])
+                self.assertFalse(client.interactions.create.call_args.kwargs["automatic_continuation"])
+                self.assertEqual(4096,client.interactions.create.call_args.kwargs["generation_config"]["max_output_tokens"])
 
     def test_metadata_and_questions_are_data_in_prompt(self):
         body = request()
@@ -100,7 +104,7 @@ class Plans(unittest.TestCase):
             captured.append(json.loads(request.content))
             return httpx.Response(200, json={"id":"test","status":"completed",
                 "steps":[{"type":"model_output","content":[{"type":"text",
-                    "text":main.AIPlan.model_validate(query()).model_dump_json()}]}]})
+                    "text":json.dumps({"decision":query()})}]}]})
         def factory(**kwargs):
             kwargs["http_options"].httpx_client = httpx.Client(transport=httpx.MockTransport(transport))
             return real_client(**kwargs)
@@ -113,6 +117,47 @@ class Plans(unittest.TestCase):
         raw["query_config"]["filters"] = [{"column":"amount","operator":"eq","value":9007199254740993}]
         plan = main.AIPlan.model_validate(raw)
         self.assertEqual(9007199254740993, plan.query_config.filters[0].value)
+
+    def test_provider_schema_rejects_incomplete_dashboard_before_generation(self):
+        # This incomplete result matched the old JSON schema, then failed its Python callback.
+        for decision in ({"intent":"create_dashboard"},
+                         {"intent":"create_dashboard","dashboard_name":"Revenue"},
+                         {"intent":"create_dashboard","dashboard_name":"Revenue","useTemplate":True},
+                         {"intent":"create_dashboard","dashboard_name":"Revenue","useTemplate":False}):
+            with self.subTest(decision=decision), self.assertRaises(ValidationError):
+                main.GeneratedPlan.model_validate({"decision":decision})
+        definitions = main.GeneratedPlan.model_json_schema()["$defs"]
+        self.assertIn("dashboard_name", definitions["TemplateDecision"]["required"])
+        self.assertIn("useTemplate", definitions["TemplateDecision"]["required"])
+        self.assertIn("mapping", definitions["TemplateDecision"]["required"])
+        self.assertIn("charts", definitions["CustomDecision"]["required"])
+
+    def test_provider_dashboard_output_is_normalized_to_existing_api_contract(self):
+        template = {"intent":"create_dashboard","useTemplate":True,"dashboard_name":"Revenue",
+                    "templateId":"sales-overview","mapping":{"date":"date","revenue":"amount","region":"region","category":"category"}}
+        charts = [{"name":"Revenue","chartType":"bar","dimension":"region","metric":"amount","aggregate":"sum"},
+                  {"name":"Orders","chartType":"pie","dimension":"region","metric":"*","aggregate":"count"}]
+        custom = {"intent":"create_dashboard","useTemplate":False,"dashboard_name":"Custom","charts":charts}
+        clarify = {"intent":"clarify","clarification":"Which metric?"}
+        for decision in (template,custom,clarify):
+            with self.subTest(decision=decision), patch.dict(os.environ, {"GEMINI_API_KEY":"test-only"}):
+                with patch("main.genai.Client") as factory:
+                    factory.return_value.__enter__.return_value.interactions.create.return_value = SimpleNamespace(
+                        output_text=json.dumps({"decision":decision}))
+                    self.assertEqual(decision,main.generate_plan(main.AnalyzeRequest.model_validate(request())).model_dump(exclude_none=True))
+
+    def test_validation_error_is_distinguishable_from_provider_or_key_error(self):
+        with patch("main.generate_plan", return_value={"intent":"create_dashboard"}):
+            response = self.client.post("/analyze",json=request())
+        self.assertEqual(502,response.status_code)
+        self.assertEqual("INVALID_PLAN",response.headers["X-AI-Error-Code"])
+
+    def test_provider_timeout_has_stable_safe_error_code(self):
+        with patch("main.generate_plan",side_effect=httpx.ReadTimeout("API_KEY=private-secret")):
+            response=self.client.post("/analyze",json=request())
+        self.assertEqual(504,response.status_code)
+        self.assertEqual("PROVIDER_TIMEOUT",response.headers["X-AI-Error-Code"])
+        self.assertNotIn("private-secret",response.text)
 
 
 if __name__ == "__main__":

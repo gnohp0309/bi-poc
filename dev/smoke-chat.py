@@ -53,7 +53,15 @@ def run():
     conn=None
     dashboard_ids=[]
     conversations=[]
+    group_id=None
     try:
+        users=call("/users",token=admin)
+        viewer_id=next(user["id"] for user in users if user["username"]=="viewer")
+        group_id=call("/groups","POST",{"name":"Chat smoke group "+suffix},admin)["id"]
+        for _ in range(2):
+            call("/groups/"+group_id+"/members","POST",{"userId":viewer_id},admin)
+        group=next(group for group in call("/groups",token=admin) if group["id"]==group_id)
+        assert group["members"]==[viewer_id],group
         sql("GRANT USAGE ON SCHEMA uploads TO bi_reader;")
         conn=call("/connections","POST",{"name":"Chat smoke "+suffix,"host":"127.0.0.1","port":args.db_port,
              "database":args.db_name,"username":"bi_reader","password":"Reader2026!"},admin)["id"]
@@ -133,6 +141,8 @@ def run():
         call("/chat/message","POST",{"conversationId":cid,"message":"x"*4001},admin,expect=400)
         print("CHAT SMOKE PASS: query, followup/history, exact decimals, literals, grounded answers, dataset scope, empty/NULL metadata, template/custom/reload, invalid plans, full persistence rollback, ownership, roles and provider failure. No Gemini call.")
     finally:
+        if group_id:
+            sql("DELETE FROM app_groups WHERE id='"+str(uuid.UUID(group_id))+"'")
         for did in dashboard_ids:
             call("/dashboards/"+did,"DELETE",token=admin)
         if conn: call("/connections/"+conn,"DELETE",token=admin)
