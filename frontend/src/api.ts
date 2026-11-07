@@ -1,8 +1,10 @@
 export type Actor = { id: string; username: string; role: 'ADMIN' | 'ANALYST' | 'VIEWER' }
 export type Connection = { id: string; name: string; host: string; port: number; database_name: string; username: string }
 export type Dataset = { id: string; connection_id: string; connection_name: string; name: string; kind: 'PHYSICAL' | 'VIRTUAL'; source_name: string | null; sql_definition: string | null; aliases_json: string }
-export type Chart = { id: string; dataset_id: string; dataset_name: string; name: string; chart_type: 'bar' | 'line' | 'pie'; dimension: string; metric: string; aggregate: 'sum' | 'count' | 'avg'; time_grain?: 'month' | null }
-export type ChartData = { id?: string; name?: string; chartType: 'bar' | 'line' | 'pie'; dimension: string; metric: string; aggregate: string; timeGrain?: 'month' | null; rows: Record<string, unknown>[]; position?: number }
+export type ChartType = 'bar' | 'line' | 'pie' | 'donut' | 'kpi' | 'histogram' | 'scatter' | 'heatmap' | 'map' | 'stacked-bar' | 'stacked-area'
+export type Chart = { id: string; dataset_id: string; dataset_name: string; name: string; chart_type: ChartType; dimension: string; metric: string; aggregate: 'sum' | 'count' | 'avg'; time_grain?: 'month' | null }
+export type ChartData = { columns?: string[]; rowKeys?: string[]; datasetId?: string; id?: string; name?: string; chartType: ChartType; dimension: string; metric: string; aggregate: string; timeGrain?: 'month' | null; rows: Record<string, unknown>[]; position?: number; x?: number; y?: number; w?: number; h?: number; numericColumns?: string[]; seriesDimension?: string; truncated?: boolean; notes?: string[] }
+export type ChartDefinition = { id: string; datasetId: string; name: string; chartType: ChartType; dimension: string; metric: string; aggregate: 'sum' | 'avg' | 'count'; timeGrain?: 'month' | null; seriesDimension?: string; numericColumns?: string[]; binCount?: number; latitude?: string; longitude?: string; labelColumn?: string }
 export type Dashboard = { id: string; name: string; chart_count: number; share_token: string | null }
 export type DashboardDetail = Dashboard & { charts: ChartData[] }
 export type QueryResult = { columns: string[]; rows: Record<string, unknown>[]; truncated: boolean }
@@ -15,7 +17,7 @@ export type FileImport = {
 export type Conversation = { id: string; dataset_id: string; dataset_name: string; title: string; message_count: number; created_at: string; updated_at: string }
 export type ChatMessage = { id: string; role: 'user' | 'assistant' | 'system'; content: string; metadata_json: string; created_at: string }
 export type ConversationDetail = { id: string; dataset_id: string; title: string; created_at: string; updated_at: string; messages: ChatMessage[] }
-export type ChatResponse = { message_id: string; intent: string; answer: string; data?: QueryResult; dashboard_id?: string }
+export type ChatResponse = { message_id: string; intent: string; answer: string; data?: QueryResult; dashboard_id?: string; analysis_result?: import('./chat-result-model').AnalysisResult }
 
 export async function uploadCsv(file: File, title: string): Promise<FileImport> {
   const form = new FormData()

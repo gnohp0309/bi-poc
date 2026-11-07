@@ -21,14 +21,19 @@ public class Dashboards {
   public Map<String,Object> detail(UUID id,String filter,String filterDimension){
     List<Map<String,Object>> rows=db.queryForList("SELECT id,name,owner_id,share_token,created_at FROM dashboards WHERE id=?",id);
     if(rows.isEmpty()) throw Api.notFound();
-    List<Map<String,Object>> items=db.queryForList("SELECT chart_id,position FROM dashboard_charts WHERE dashboard_id=? ORDER BY position",id);
+    List<Map<String,Object>> items=db.queryForList("SELECT chart_id,position,grid_x,grid_y,grid_w,grid_h FROM dashboard_charts WHERE dashboard_id=? ORDER BY position",id);
     List<Map<String,Object>> data=new ArrayList<>();
     for(Map<String,Object> item:items){
       UUID chartId=(UUID)item.get("chart_id");
       String dimension=charts.get(chartId).get("dimension").toString();
       String relevantFilter=filterDimension==null || filterDimension.isBlank() || filterDimension.equals(dimension) ? filter : null;
       Map<String,Object> chart=new LinkedHashMap<>(charts.data(chartId,relevantFilter));
-      chart.put("position",item.get("position"));data.add(chart);
+      chart.put("position",item.get("position"));
+      int position=((Number)item.get("position")).intValue();
+      chart.put("x",item.get("grid_x")==null?(position%2)*6:item.get("grid_x"));
+      chart.put("y",item.get("grid_y")==null?(position/2)*9:item.get("grid_y"));
+      chart.put("w",item.get("grid_w")==null?6:item.get("grid_w"));
+      chart.put("h",item.get("grid_h")==null?9:item.get("grid_h"));data.add(chart);
     }
     Map<String,Object> result=new LinkedHashMap<>(rows.get(0));result.put("charts",data);return result;
   }
@@ -41,14 +46,44 @@ public class Dashboards {
   public void layout(UUID id,Map<String,Object> body,Auth.Actor actor){
     auth.canEdit(actor);
     if(db.queryForObject("SELECT count(*) FROM dashboards WHERE id=?",Integer.class,id)==0) throw Api.notFound();
-    Object raw=body.get("chartIds");
-    if(!(raw instanceof List<?> ids) || ids.size()>24) throw Api.bad("Cần danh sách tối đa 24 biểu đồ");
+    lock(id);
+    var items=DashboardLayout.parse(body);
+    // Serialize membership changes with chart edits, in a stable lock order.
+    items.stream().map(DashboardLayout.Item::chartId).sorted().forEach(chartId->{
+      if(db.queryForList("SELECT id FROM charts WHERE id=? FOR UPDATE",chartId).isEmpty())throw Api.notFound();
+    });
     db.update("DELETE FROM dashboard_charts WHERE dashboard_id=?",id);
-    Set<UUID> unique=new HashSet<>();int pos=0;
-    for(Object item:ids){UUID chartId=Api.uuid(item.toString());charts.get(chartId);
-      if(unique.add(chartId)) db.update("INSERT INTO dashboard_charts(dashboard_id,chart_id,position) VALUES (?,?,?)",id,chartId,pos++);
-    }
+    int pos=0;
+    for(var item:items)db.update("INSERT INTO dashboard_charts(dashboard_id,chart_id,position,grid_x,grid_y,grid_w,grid_h) VALUES (?,?,?,?,?,?,?)",
+        id,item.chartId(),pos++,item.x(),item.y(),item.w(),item.h());
     auth.audit(actor,"UPDATE_LAYOUT","DASHBOARD",id);
+  }
+  private void lock(UUID id){
+    if(db.queryForList("SELECT id FROM dashboards WHERE id=? FOR UPDATE",id).isEmpty())throw Api.notFound();
+  }
+  @Transactional
+  public void rename(UUID id,Map<String,Object> body,Auth.Actor actor){
+    auth.canEdit(actor);String name=Chat.bounded(Api.text(body,"name"),200,"Tên dashboard");
+    if(db.update("UPDATE dashboards SET name=? WHERE id=?",name,id)==0)throw Api.notFound();
+    auth.audit(actor,"RENAME","DASHBOARD",id);
+  }
+  @Transactional
+  public Map<String,Object> editChart(UUID id,UUID chartId,Map<String,Object> body,Auth.Actor actor){
+    auth.canEdit(actor);lock(id);
+    if(db.queryForList("SELECT id FROM charts WHERE id=? FOR UPDATE",chartId).isEmpty())throw Api.notFound();
+    if(db.queryForObject("SELECT count(*) FROM dashboard_charts WHERE dashboard_id=? AND chart_id=?",Integer.class,id,chartId)==0)throw Api.notFound();
+    var original=charts.get(chartId);
+    if(body.containsKey("datasetId") && !original.get("dataset_id").toString().equals(Api.text(body,"datasetId")))throw Api.bad("Không đổi dataset khi sửa biểu đồ; hãy thêm biểu đồ mới");
+    Map<String,Object> spec=new LinkedHashMap<>(body);spec.put("datasetId",original.get("dataset_id").toString());
+    spec.put("name",Chat.bounded(Api.text(spec,"name"),120,"Tiêu đề biểu đồ"));
+    boolean shared=db.queryForObject("SELECT count(*) FROM dashboard_charts WHERE chart_id=?",Integer.class,chartId)>1;
+    UUID saved=chartId;
+    if(shared){
+      saved=charts.save(spec,actor);
+      db.update("UPDATE dashboard_charts SET chart_id=? WHERE dashboard_id=? AND chart_id=?",saved,id,chartId);
+    }else charts.update(chartId,spec,actor);
+    auth.audit(actor,"EDIT_CHART","DASHBOARD",id);
+    return Map.of("chartId",saved,"copied",shared);
   }
   public UUID share(UUID id,Auth.Actor actor){
     auth.canEdit(actor);
@@ -78,6 +113,8 @@ public class Dashboards {
       Auth.Actor actor=auth.actor(request);Map<String,Object> result=service.detail(Api.uuid(id),filter,filterDimension);
       auth.audit(actor,"VIEW","DASHBOARD",id);return result;
     }
+    @PutMapping("/dashboards/{id}") Map<String,Boolean> rename(@PathVariable String id,@RequestBody Map<String,Object> body,HttpServletRequest request){service.rename(Api.uuid(id),body,auth.actor(request));return Map.of("ok",true);}
+    @PutMapping("/dashboards/{id}/charts/{chartId}") Map<String,Object> editChart(@PathVariable String id,@PathVariable String chartId,@RequestBody Map<String,Object> body,HttpServletRequest request){return service.editChart(Api.uuid(id),Api.uuid(chartId),body,auth.actor(request));}
     @PutMapping("/dashboards/{id}/layout") Map<String,Boolean> layout(@PathVariable String id,@RequestBody Map<String,Object> body,HttpServletRequest request){service.layout(Api.uuid(id),body,auth.actor(request));return Map.of("ok",true);}
     @PostMapping("/dashboards/{id}/share") Map<String,Object> share(@PathVariable String id,HttpServletRequest request){return Map.of("token",service.share(Api.uuid(id),auth.actor(request)));}
     @DeleteMapping("/dashboards/{id}/share") Map<String,Boolean> unshare(@PathVariable String id,HttpServletRequest request){service.unshare(Api.uuid(id),auth.actor(request));return Map.of("ok",true);}

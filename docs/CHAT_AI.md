@@ -112,3 +112,9 @@ Không chạy smoke-chat.py vào database đang dùng để demo: bài rollback 
 **Kiểm thử provider giả lập không chứng minh chất lượng Gemini, quyền truy cập model, key, quota hoặc độ trễ thực tế.** Cần điền key riêng và chạy các câu hỏi demo trên trước khi báo cáo rằng luồng Gemini đã được xác nhận. API/schema validation cũng không bảo đảm AI chọn đúng ý nghĩa cột; phải đối chiếu phép tính và biểu đồ.
 
 AI service dùng Google GenAI SDK và JSON Schema theo [tài liệu thư viện chính thức](https://ai.google.dev/gemini-api/docs/libraries) và [structured outputs](https://ai.google.dev/gemini-api/docs/structured-output). main_v2.py chỉ là entry point tương thích cho cùng implementation, không còn đường chạy SQL khác.
+
+
+ChartSpec hỗ trợ thêm KPI, histogram, scatter, heatmap, map, donut và stacked; xem [hợp đồng cấu hình](VISUALIZATIONS.md). Các bộ kiểm thử schema không thay thế demo provider Gemini thật.
+
+
+Hiển thị bảng/biểu đồ query và hợp đồng kết quả kiểm định có cấu trúc: [CHAT_RESULTS](CHAT_RESULTS.md). Statistical Engine kiểm định chưa có trong repo; frontend không tự tính hoặc lấy p-value từ LLM.

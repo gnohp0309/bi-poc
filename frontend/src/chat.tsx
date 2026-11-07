@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import type { Dataset, Conversation, ConversationDetail, ChatResponse, QueryResult } from './api'
-import { Empty, SectionTitle, DataTable } from './ui'
-import { ChatDashboard } from './chat-dashboard'
+import type { Dataset, Conversation, ConversationDetail, ChatResponse } from './api'
+import { Empty, SectionTitle } from './ui'
+import { ChatResult } from './chat-result'
 
 type Done = (message: string) => void
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
@@ -185,12 +185,7 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
                     <div className="message-header">
                       <small>{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</small>
                     </div>
-                    <div className="message-content">
-                      {msg.content.split('\n').map((line, i) => (
-                        <p key={i}>{line}</p>
-                      ))}
-                    </div>
-                    {msg.role === 'assistant' && <ChatResult metadataJson={msg.metadata_json} openDashboard={openDashboard} />}
+                    {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json} openDashboard={openDashboard} /> : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
                   </div>
                 ))
               )}
@@ -280,14 +275,4 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
       )}
     </div>
   )
-}
-
-function ChatResult({ metadataJson, openDashboard }: { metadataJson: string; openDashboard: (id: string) => void }) {
-  try {
-    const metadata = JSON.parse(metadataJson) as { dashboard_id?: string; data?: QueryResult }
-    return <div className="message-meta">
-      {typeof metadata.dashboard_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(metadata.dashboard_id) && <ChatDashboard id={metadata.dashboard_id} openDashboard={openDashboard} />}
-      {metadata.data && <DataTable result={metadata.data} max={500} />}
-    </div>
-  } catch { return null }
 }

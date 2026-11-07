@@ -1,0 +1,26 @@
+{
+  "analysis_result": {
+    "schemaVersion": 1,
+    "kind": "statistical_test",
+    "status": "success",
+    "title": "Fixture kiểm thử giao diện T-test",
+    "summary": "Dữ liệu giả lập chỉ để kiểm tra hiển thị; không phải kết quả engine thống kê.",
+    "method": "Welch Independent T-test",
+    "alpha": 0.05,
+    "hypotheses": { "h0": "Trung bình hai nhóm bằng nhau.", "h1": "Trung bình hai nhóm khác nhau." },
+    "sample": { "total": 42, "used": 40, "missing": 2, "groups": [{ "name": "Nhóm A", "count": 20 }, { "name": "Nhóm B", "count": 20 }] },
+    "statistic": { "status": "available", "name": "t", "value": "2.523456789012345" },
+    "pValue": { "status": "available", "value": "1.2e-12" },
+    "confidenceInterval": { "status": "available", "lower": "1.25", "upper": "4.75", "level": 0.95 },
+    "effectSize": { "status": "available", "name": "Cohen d", "value": "0.8" },
+    "assumptions": [
+      { "name": "Tính độc lập", "status": "not_checked", "detail": "Cần người dùng xác nhận thiết kế thu thập dữ liệu." },
+      { "name": "Phương sai bằng nhau", "status": "not_applicable", "detail": "Ví dụ phương pháp Welch không yêu cầu phương sai bằng nhau." }
+    ],
+    "warnings": ["Fixture kiểm thử: các số được đặt để kiểm tra renderer, không được dùng làm bằng chứng kết luận thống kê."],
+    "conclusion": "Kết luận ví dụ từ fixture. Giao diện giữ nguyên nội dung engine và không tự so sánh p-value với alpha.",
+    "data": { "columns": ["group", "count", "mean"], "rows": [{ "group": "A", "count": 20, "mean": 12 }, { "group": "B", "count": 20, "mean": 9 }], "truncated": false },
+    "charts": [{ "chartType": "bar", "name": "Trung bình nhóm — fixture", "dimension": "group", "metric": "mean", "aggregate": "avg", "rows": [{ "label": "A", "value": 12 }, { "label": "B", "value": 9 }] }],
+    "provenance": { "engine": "Fixture kiểm thử UI", "version": "1", "sampled": false, "missingPolicy": "Ví dụ: loại quan sát thiếu trước khi tính." }
+  }
+}
