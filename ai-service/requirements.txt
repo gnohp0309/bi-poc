@@ -3,3 +3,10 @@ uvicorn==0.32.0
 pydantic>=2.10.0,<3
 google-genai==2.34.0
 python-dotenv==1.0.1
+
+# Statistical libraries
+numpy>=1.26.0
+pandas>=2.1.0
+scipy>=1.11.0
+statsmodels>=0.14.0
+pingouin>=0.5.4
