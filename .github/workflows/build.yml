@@ -109,6 +109,8 @@ jobs:
           cat /tmp/bi-poc-ai.log
           exit 1
       - name: Check integrated chat and transaction rollback
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python dev/smoke-chat.py --db-name bi_poc_app
       - name: Backend log on failure
         if: failure()
