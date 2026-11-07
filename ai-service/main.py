@@ -75,11 +75,18 @@ class AnalyzeRequest(StrictModel):
 
 class ChartSpec(StrictModel):
     name: str = Field(min_length=1, max_length=120)
-    chartType: Literal["bar", "line", "pie"]
-    dimension: str
-    metric: str
+    chartType: Literal["bar", "line", "pie", "donut", "kpi", "histogram", "scatter", "heatmap", "map", "stacked-bar", "stacked-area"]
+    dimension: str = ""
+    metric: str = ""
     aggregate: Literal["sum", "avg", "count"]
     timeGrain: Literal["month"] | None = None
+    seriesDimension: str | None = None
+    numericColumns: list[str] | None = Field(default=None, min_length=2, max_length=8)
+    binCount: int | None = Field(default=None, ge=2, le=50, strict=True)
+    latitude: str | None = None
+    longitude: str | None = None
+    labelColumn: str | None = None
+
 
 
 class AIPlan(StrictModel):
@@ -153,6 +160,13 @@ bắt buộc của nhánh đó. Không xuất các trường của nhánh khác 
 Không sinh SQL, tên bảng, biểu thức SQL, câu trả lời số liệu hoặc kết quả tự bịa.
 Chỉ dùng tên cột có trong metadata. Backend sẽ kiểm tra và chạy trên dataset đang chọn.
 
+Biểu đồ hỗ trợ: bar/line/pie/donut; kpi (metric, aggregate, dimension="");
+histogram (metric số, aggregate=count, binCount 2..50); scatter (dimension=X số, metric=Y số);
+heatmap (numericColumns 2..8 cột số, dimension="", metric="", aggregate=count);
+map (latitude,longitude là tên cột số thực, metric/aggregate, labelColumn tùy chọn; không suy đoán tọa độ từ tên vùng);
+stacked-bar/stacked-area (dimension, seriesDimension, metric, aggregate; area cần dimension ngày, timeGrain=month tùy chọn).
+Chỉ chọn dạng có đủ cột phù hợp; thiếu tọa độ hay cột số thì hỏi rõ. Không tự tính tương quan hoặc chia khoảng trong câu trả lời.
+
 3 intent:
 1. query: query_config dùng đúng hợp đồng:
    groupBy: [{column, timeGrain?: day/month/year, alias?: tên_ASCII}],
@@ -171,7 +185,7 @@ Chỉ dùng tên cột có trong metadata. Backend sẽ kiểm tra và chạy tr
    order-status: date (date), revenue (number), status (text).
    Trả useTemplate=true, templateId, dashboard_name, mapping nếu phù hợp.
    Nếu không phù hợp template, trả useTemplate=false, dashboard_name, charts gồm 2..4
-   biểu đồ có ý nghĩa: {name, chartType: bar/line/pie, dimension, metric, aggregate: sum/avg/count,
+   biểu đồ có ý nghĩa, theo các dạng và trường cấu hình đã mô tả ở trên: {name, chartType, dimension, metric, aggregate: sum/avg/count,
    timeGrain?: month}. SUM/AVG cần cột số; COUNT có thể dùng metric="*".
    timeGrain=month chỉ dùng cột date; thời gian có múi giờ được nhóm theo UTC.
 3. clarify: thiếu cột, yêu cầu mơ hồ/ngoài khả năng thì đặt câu hỏi làm rõ.

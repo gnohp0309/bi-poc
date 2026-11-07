@@ -72,6 +72,21 @@ class ChatTests {
     var spec=Map.<String,Object>of("name","Chart","sql","SELECT * FROM app_users");
     assertThrows(Api.Failure.class,()->Chat.customSpecs(List.of(spec,spec),UUID.randomUUID()));
   }
+  @Test void customChartsPreserveTypedHistogramAndHeatmapOptions() {
+    UUID dataset=UUID.randomUUID();
+    var histogram=Map.<String,Object>of("name","Distribution","chartType","histogram","metric","amount","aggregate","count","binCount",10);
+    var heatmap=Map.<String,Object>of("name","Correlation","chartType","heatmap","aggregate","count","numericColumns",List.of("amount","quantity"));
+    var specs=Chat.customSpecs(List.of(histogram,heatmap),dataset);
+    assertEquals(10,specs.get(0).get("binCount"));
+    assertEquals(List.of("amount","quantity"),specs.get(1).get("numericColumns"));
+    assertEquals(dataset.toString(),specs.get(1).get("datasetId"));
+  }
+  @Test void customChartsRejectMalformedTypedOptions() {
+    for(var options:List.of(Map.of("binCount",2.5),Map.of("binCount",100),Map.of("numericColumns",List.of("amount",42)))) {
+      Map<String,Object> spec=new HashMap<>(options);spec.put("name","Bad");spec.put("chartType","heatmap");
+      assertThrows(Api.Failure.class,()->Chat.customSpecs(List.of(spec,spec),UUID.randomUUID()));
+    }
+  }
   @Test void emptyAndNullResultsRemainDistinct() {
     assertTrue(Chat.formatAnswer(Map.of("rows",List.of())).contains("Không tìm thấy"));
     var nullRow=new HashMap<String,Object>(); nullRow.put("sum",null);

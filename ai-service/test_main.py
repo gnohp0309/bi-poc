@@ -160,5 +160,23 @@ class Plans(unittest.TestCase):
         self.assertNotIn("private-secret",response.text)
 
 
+class VisualizationContractTests(unittest.TestCase):
+    def test_extended_chart_options_keep_their_types(self):
+        histogram = main.ChartSpec.model_validate({"name":"Distribution","chartType":"histogram","metric":"amount","aggregate":"count","binCount":10})
+        heatmap = main.ChartSpec.model_validate({"name":"Correlation","chartType":"heatmap","aggregate":"count","numericColumns":["amount","quantity"]})
+        self.assertEqual(10, histogram.binCount)
+        self.assertEqual(["amount","quantity"], heatmap.numericColumns)
+
+    def test_chart_bins_and_column_lists_are_bounded(self):
+        for extra in ({"binCount":2.5},{"binCount":51},{"numericColumns":["amount"]}):
+            with self.subTest(extra=extra), self.assertRaises(ValidationError):
+                main.ChartSpec.model_validate({"name":"Invalid","chartType":"histogram","aggregate":"count",**extra})
+
+    def test_all_visualization_types_are_accepted(self):
+        for chart_type in ("bar","line","pie","donut","kpi","histogram","scatter","heatmap","map","stacked-bar","stacked-area"):
+            with self.subTest(chart_type=chart_type):
+                self.assertEqual(chart_type, main.ChartSpec.model_validate({"name":"Chart","chartType":chart_type,"aggregate":"count"}).chartType)
+
+
 if __name__ == "__main__":
     unittest.main()

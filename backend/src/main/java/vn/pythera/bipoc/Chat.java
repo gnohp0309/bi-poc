@@ -147,6 +147,9 @@ public class Chat {
       extra.put("has_data",true);
       extra.put("row_count",data.get("rowCount"));
       result.put("data",data);
+      Map<String,Object> presentation=ChatAnalysisPresentation.query(datasetId,data,plan.query_config());
+      extra.put("analysis_result",presentation);
+      result.put("analysis_result",presentation);
     } else if("create_dashboard".equals(plan.intent())) {
       String name=bounded(plan.dashboard_name(),120,"Tên dashboard");
       UUID dashboardId;
@@ -190,10 +193,17 @@ public class Chat {
   static List<Map<String,Object>> customSpecs(List<Map<String,Object>> proposed,UUID datasetId) {
     if(proposed==null || proposed.size()<2 || proposed.size()>4) throw Api.bad("Dashboard custom cần từ 2 đến 4 biểu đồ");
     List<Map<String,Object>> specs=new ArrayList<>();
-    Set<String> allowed=Set.of("name","chartType","dimension","metric","aggregate","timeGrain");
+    Set<String> allowed=Set.of("name","chartType","dimension","metric","aggregate","timeGrain","seriesDimension","numericColumns","binCount","latitude","longitude","labelColumn");
     for(var raw:proposed) {
       if(raw==null || !allowed.containsAll(raw.keySet())) throw Api.bad("Cấu hình biểu đồ AI không hợp lệ");
-      for(var value:raw.values()) if(value!=null && !(value instanceof String)) throw Api.bad("Thuộc tính biểu đồ cần chuỗi");
+      for(var entry:raw.entrySet()){
+        Object value=entry.getValue();if(value==null)continue;
+        if(entry.getKey().equals("numericColumns")){
+          if(!(value instanceof List<?> items) || items.size()<2 || items.size()>8 || items.stream().anyMatch(v->!(v instanceof String)))throw Api.bad("Heatmap cần 2–8 tên cột");
+        } else if(entry.getKey().equals("binCount")){
+          try{int n=new java.math.BigDecimal(value.toString()).intValueExact();if(n<2 || n>50)throw new IllegalArgumentException();}catch(Exception e){throw Api.bad("Số khoảng phải là số nguyên từ 2 đến 50");}
+        } else if(!(value instanceof String))throw Api.bad("Thuộc tính biểu đồ cần chuỗi");
+      }
       Map<String,Object> spec=new LinkedHashMap<>(raw);
       spec.put("name",bounded(Api.text(raw,"name"),120,"Tên biểu đồ"));
       spec.put("datasetId",datasetId.toString());

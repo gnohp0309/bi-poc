@@ -35,12 +35,23 @@ try {
   $columns = @(Call 'GET' "/datasets/$($dataset.id)/columns" $null)
   Assert (($columns | Where-Object name -eq 'order_date').kind -eq 'date') 'Date metadata differs'
   $body = @{ datasetId = $dataset.id; templateId = 'sales-overview'; name = 'Template smoke'; mapping = @{ date = 'order_date'; revenue = 'amount'; region = 'region'; category = 'category' } }
+  $beforePreviewCharts = @(Call 'GET' '/charts' $null).Count
+  $beforePreviewDashboards = @(Call 'GET' '/dashboards' $null).Count
+  Assert ($templates[0].charts.Count -eq 3 -and $templates[0].charts[0].w -eq 12) 'Template blueprint/layout missing'
+  $preview = Call 'POST' '/dashboard-templates/sales-overview/preview' $body
+  Assert ($preview.eligible -and $preview.charts.Count -eq 3) 'Valid mapping preview failed'
+  Assert ($preview.charts[0].rows[0].value -eq 300 -and $preview.charts[0].w -eq 12 -and $preview.charts[1].y -eq 10) 'Preview data/layout differs'
+  Assert ($preview.warnings.Count -gt 0) 'NULL date warning missing'
+  Assert (@(Call 'GET' '/charts' $null).Count -eq $beforePreviewCharts -and @(Call 'GET' '/dashboards' $null).Count -eq $beforePreviewDashboards) 'Preview wrote persisted objects'
+  $invalidPreview = Call 'POST' '/dashboard-templates/sales-overview/preview' @{datasetId=$dataset.id;mapping=@{date='region';revenue='missing'}}
+  Assert (-not $invalidPreview.eligible -and $invalidPreview.issues.Count -eq 4 -and $invalidPreview.charts.Count -eq 0) 'Preview should report all missing/wrong fields'
   $created = Call 'POST' '/dashboards/from-template' $body
   $dashboardIds += $created.dashboardId
   # Fetch twice to verify persisted configuration, not just creation response.
   foreach ($attempt in 1..2) {
     $detail = Call 'GET' "/dashboards/$($created.dashboardId)" $null
     Assert ($detail.charts.Count -eq 3) 'Expected three charts'
+    Assert ($detail.charts[0].w -eq 12 -and $detail.charts[1].y -eq 10 -and $detail.charts[2].x -eq 6) 'Template layout not persisted'
     Assert ($detail.charts[0].rows.Count -eq 2) 'Expected two months'
     Assert ($detail.charts[0].rows[0].label -eq '2025-01' -and $detail.charts[0].rows[0].value -eq 300) 'Monthly sum differs'
     Assert (($detail.charts[1].rows | Where-Object label -eq 'South').value -eq 450) 'Region sum should include NULL date'
@@ -86,13 +97,22 @@ try {
   $body.mapping.date = 'order_date'; $body.templateId = 'unknown'; Rejected $body
   $body.templateId = 'sales-overview'
   Assert (@(Call 'GET' '/charts' $null).Count -eq $before) 'Invalid request left charts behind'
-  # A bad identifier in the second chart makes the first insert roll back.
+  # Real metadata names containing spaces are safely quoted, not rejected or interpolated.
   $bad = Call 'POST' '/datasets' @{ connectionId = $conn.id; name = 'Rollback fixture'; kind = 'VIRTUAL'; sql = 'SELECT order_date, amount, region AS "bad region", category FROM (' + $sql + ') fixture' }
   $body.datasetId = $bad.id; $body.mapping.region = 'bad region'
-  Rejected $body
-  Assert (@(Call 'GET' '/charts' $null).Count -eq $before) 'Failed creation did not roll back charts'
+  $namedDashboard=Call 'POST' '/dashboards/from-template' $body
+  $dashboardIds+=$namedDashboard.dashboardId
+  $namedDetail=Call 'GET' "/dashboards/$($namedDashboard.dashboardId)" $null
+  Assert (($namedDetail.charts[1].rows | Where-Object label -eq 'South').value -eq 450) 'Space-containing metadata column was not quoted correctly'
+  $special=Call 'POST' '/datasets' @{connectionId=$conn.id;name='Unicode quoted fields';kind='VIRTUAL';sql=('SELECT order_date AS "Ngày", amount AS "Doanh thu", region AS "Vùng", category AS "Nhóm ""hàng""" FROM ('+$sql+') source')}
+  $specialBody=@{datasetId=$special.id;templateId='sales-overview';name='Unicode template';mapping=@{date='Ngày';revenue='Doanh thu';region='Vùng';category='Nhóm "hàng"'}}
+  $specialDashboard=Call 'POST' '/dashboards/from-template' $specialBody;$dashboardIds+=$specialDashboard.dashboardId
+  $specialDetail=Call 'GET' "/dashboards/$($specialDashboard.dashboardId)" $null
+  Assert (($specialDetail.charts[2].rows | Where-Object label -eq 'A').value -eq 500) 'Unicode/quote metadata mapping failed'
   $empty = Call 'POST' '/datasets' @{ connectionId = $conn.id; name = 'Empty fixture'; kind = 'VIRTUAL'; sql = 'SELECT * FROM (' + $sql + ') fixture WHERE false' }
   $body.datasetId = $empty.id; $body.mapping.region = 'region'
+  $emptyPreview = Call 'POST' '/dashboard-templates/sales-overview/preview' $body
+  Assert ($emptyPreview.eligible -and $emptyPreview.warnings.Count -gt 0) 'Empty source should have explicit warning'
   $createdEmpty = Call 'POST' '/dashboards/from-template' $body
   $dashboardIds += $createdEmpty.dashboardId
   $emptyDetail = Call 'GET' "/dashboards/$($createdEmpty.dashboardId)" $null
@@ -139,11 +159,20 @@ try {
   $body.mapping.status = 'total_value'; Rejected $body
   $body.mapping.status = 'order_state'
   Assert (@(Call 'GET' '/charts' $null).Count -eq $before) 'Invalid status mapping left charts behind'
+  # Reject impossible pie totals and non-finite amounts before any chart is saved.
+  foreach($amount in @('-10',"'NaN'")) {
+    $problemDataset=Call 'POST' '/datasets' @{connectionId=$conn.id;name='Invalid numeric template';kind='VIRTUAL';sql="SELECT DATE '2025-01-01' event_date,$amount`::numeric amount,'North'::text region,'A'::text category"}
+    $problemBody=@{datasetId=$problemDataset.id;templateId='sales-overview';name='Should fail';mapping=@{date='event_date';revenue='amount';region='region';category='category'}}
+    $report=Call 'POST' '/dashboard-templates/sales-overview/preview' $problemBody
+    Assert (-not $report.eligible -and $report.issues.Count -gt 0) 'Unsafe numeric/pie data accepted'
+    $countBefore=@(Call 'GET' '/charts' $null).Count;Rejected $problemBody
+    Assert (@(Call 'GET' '/charts' $null).Count -eq $countBefore) 'Rejected template left chart objects'
+  }
   $viewer = Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body '{"username":"viewer","password":"Demo2026!"}'
   $adminHeaders = $headers
   $headers = @{ Authorization = "Bearer $($viewer.token)" }
   try { Rejected $body 403 } finally { try { Call 'POST' '/auth/logout' $null | Out-Null } finally { $headers = $adminHeaders } }
-  Write-Host 'Template smoke PASS: sales/product/status, CSV, monthly filters, UTC analysis consistency, SUM/COUNT, NULL, reload, validation, rollback, empty data, Viewer.'
+  Write-Host 'Template smoke PASS: three templates, real/CSV/Unicode/quoted mapping, read-only preview, default layout, UTC SUM/COUNT, NULL/empty warnings, invalid mapping/non-finite/negative pie rejection, reload, Viewer.'
 } finally {
   try { foreach ($id in $dashboardIds) { Call 'DELETE' "/dashboards/$id" $null | Out-Null } }
   finally {
