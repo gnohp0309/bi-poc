@@ -7,7 +7,7 @@ Phạm vi: ghép engine của Tú trong PR #5, giao diện/dashboard của Thanh
 | Nhóm kiểm tra | Kết quả quan sát |
 |---|---|
 | Java | 57 tests đạt, không lỗi hoặc bỏ qua |
-| Python | 65 tests đạt, gồm cấu hình Gemini, dữ liệu thật, biên NULL/cột hằng, CI Welch và hướng paired test |
+| Python | 67 tests đạt, gồm cấu hình Gemini, dữ liệu thật, biên NULL/cột hằng, CI Welch, hướng paired test và alias hỏi lại của provider |
 | Frontend | Build đạt; 30 tests hợp đồng dữ liệu, template, bố cục và xuất file đạt |
 | Hồi quy API | 8 bộ smoke PowerShell đạt: chức năng gốc, CSV, template, analysis, exploration, editor, interaction, visualizations |
 | Chat tích hợp | Smoke dùng provider xác định đạt; gồm lưu lịch sử, quyền, cấu hình sai và rollback giao dịch |
@@ -28,6 +28,7 @@ Phạm vi: ghép engine của Tú trong PR #5, giao diện/dashboard của Thanh
 - Bỏ fallback sang dữ liệu ngẫu nhiên khi không tải được dataset; nguồn lỗi phải báo lỗi.
 - Chuyển đúng cột và toàn bộ dòng từ Spring Boot sang Python bằng route có khóa nội bộ; không đưa thông tin database vào frontend hoặc LLM.
 - Sửa schema Gemini bị quá nhiều trạng thái; vẫn kiểm tra cấu hình đầy đủ sau giải mã và ở backend.
+- Khi thử lại trên cổng demo, Gemini có lần dùng intent `clarification` thay cho `clarify`. Đã tái hiện phản hồi, thêm chuyển đổi duy nhất cho alias không thực thi dữ liệu này và kiểm tra SQL/trường lạ vẫn bị từ chối. Không retry ngầm trả phí.
 - Sửa khoảng tin cậy Welch và thống nhất hướng Sau trừ Trước cho paired test.
 - Tách số thiếu hiện tại, lỗi lúc nhập và số dòng ngoài nhóm phân tích; giữ NULL khi kết quả không xác định.
 - Thống nhất cổng AI 8000, giữ đầy đủ schema các loại biểu đồ sau merge.

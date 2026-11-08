@@ -162,6 +162,23 @@ class Plans(unittest.TestCase):
 
 
 class CompactProviderTests(unittest.TestCase):
+    def test_provider_clarification_alias_is_normalized_without_executing_data(self):
+        decision={"intent":"clarification","clarification":"Dataset has no profit column. Which column?"}
+        with patch.dict(os.environ,{"GEMINI_API_KEY":"test-only"}),patch("app.routers.legacy_analyze.genai.Client") as factory:
+            factory.return_value.__enter__.return_value.interactions.create.return_value=SimpleNamespace(output_text=json.dumps({"decision":decision}))
+            response=TestClient(main.app).post("/analyze",json=request())
+        self.assertEqual(200,response.status_code)
+        self.assertEqual("clarify",response.json()["intent"])
+        self.assertNotIn("query_config",response.json())
+
+    def test_clarification_alias_does_not_bypass_strict_payload_validation(self):
+        for decision in ({"intent":"clarification","clarification":"Which column?","sql":"SELECT 1"},
+                         {"intent":"clarification"},
+                         {"intent":"unrecognized","clarification":"Which column?"}):
+            with self.subTest(decision=decision),patch.dict(os.environ,{"GEMINI_API_KEY":"test-only"}),patch("app.routers.legacy_analyze.genai.Client") as factory:
+                factory.return_value.__enter__.return_value.interactions.create.return_value=SimpleNamespace(output_text=json.dumps({"decision":decision}))
+                self.assertEqual(502,TestClient(main.app).post("/analyze",json=request()).status_code)
+
     def test_provider_grammar_uses_compact_json_for_large_payloads(self):
         defs=legacy_analyze.provider_schema()["$defs"]
         self.assertEqual("string",defs["CustomDecision"]["properties"]["charts"]["type"])

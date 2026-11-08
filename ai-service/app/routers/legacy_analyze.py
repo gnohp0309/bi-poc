@@ -221,6 +221,8 @@ Các nhánh BI hiện có:
    timeGrain?: month}. SUM/AVG cần cột số; COUNT có thể dùng metric="*".
    timeGrain=month chỉ dùng cột date; thời gian có múi giờ được nhóm theo UTC.
 3. clarify: thiếu cột, yêu cầu mơ hồ/ngoài khả năng thì đặt câu hỏi làm rõ.
+   intent phải là "clarify", không phải "clarification"; clarification là trường chứa câu hỏi.
+   Ví dụ: {"decision":{"intent":"clarify","clarification":"Dataset không có cột profit. Bạn muốn dùng cột nào?"}}
 
 Ví dụ câu hỏi tổng doanh thu khi có cột amount:
 {"decision":{"intent":"query","query_config":{"metrics":[{"column":"amount","aggregate":"sum","alias":"revenue"}]}}}
@@ -277,6 +279,9 @@ def generate_plan(request: AnalyzeRequest) -> AIPlan:
     decoded=json.loads(response.output_text)
     decision=decoded.get("decision",{})
     if isinstance(decision,dict):
+        # Some provider responses use the field name as the clarification intent.
+        # This alias cannot execute queries; all fields still pass strict validation.
+        if decision.get("intent")=="clarification":decision["intent"]="clarify"
         for field in ("charts","statistics_config"):
             if isinstance(decision.get(field),str):decision[field]=json.loads(decision[field])
     generated = GeneratedPlan.model_validate(decoded)
