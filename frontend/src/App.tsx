@@ -5,20 +5,22 @@ import { ConnectionsPage, DatasetsPage, SqlPage, ChartsPage, SecurityPage } from
 import { DashboardsPage, PublicDashboard } from './dashboards'
 import { ImportsPage } from './imports'
 import { ChatPage } from './chat'
+import { ExplorationPage } from './exploration'
 import { Empty, SectionTitle } from './ui'
 
-type Page = 'overview' | 'imports' | 'connections' | 'datasets' | 'sql' | 'charts' | 'dashboards' | 'chat' | 'security'
+type Page = 'overview' | 'imports' | 'connections' | 'datasets' | 'sql' | 'charts' | 'dashboards' | 'chat' | 'security' | 'exploration'
 
 const nav: { id: Page; label: string; number: string }[] = [
   { id: 'overview', label: 'Tổng quan', number: '00' },
   { id: 'imports', label: 'Tải file & phân tích', number: '01' },
   { id: 'connections', label: 'Kết nối dữ liệu', number: '02' },
   { id: 'datasets', label: 'Datasets', number: '03' },
-  { id: 'sql', label: 'SQL Lab', number: '04' },
-  { id: 'charts', label: 'Chart Builder', number: '05' },
-  { id: 'dashboards', label: 'Dashboards', number: '06' },
-  { id: 'chat', label: 'Chat AI', number: '07' },
-  { id: 'security', label: 'Bảo mật & nhật ký', number: '08' }
+  { id: 'exploration', label: 'Khám phá dữ liệu', number: '04' },
+  { id: 'sql', label: 'SQL Lab', number: '05' },
+  { id: 'charts', label: 'Chart Builder', number: '06' },
+  { id: 'dashboards', label: 'Dashboards', number: '07' },
+  { id: 'chat', label: 'Chat AI', number: '08' },
+  { id: 'security', label: 'Bảo mật & nhật ký', number: '09' }
 ]
 
 const descriptions: Record<Page, string> = {
@@ -26,6 +28,7 @@ const descriptions: Record<Page, string> = {
   imports: 'Tải CSV, kiểm tra chất lượng dữ liệu và tạo dashboard tự động.',
   connections: 'Kiểm tra và quản lý nguồn PostgreSQL dùng để phân tích.',
   datasets: 'Tạo lớp dữ liệu trung gian từ bảng vật lý hoặc câu truy vấn.',
+  exploration: 'Tổng quan dataset, profiling, dữ liệu thiếu, chất lượng và thống kê từng cột.',
   sql: 'Soạn và chạy câu SELECT trong một giao diện có giới hạn truy vấn.',
   charts: 'Chọn chiều dữ liệu, phép tổng hợp và dạng biểu đồ.',
   dashboards: 'Sắp xếp biểu đồ, lọc dữ liệu và chia sẻ bản xem.',
@@ -88,15 +91,16 @@ export default function App() {
     <div className="workspace">
       <header className="topbar"><span>PYTHERA AI LAB <b>/</b> {active.label.toUpperCase()}</span><div className="account"><span className="avatar">{actor.username.slice(0, 1).toUpperCase()}</span><span>{actor.username}<small>{actor.role}</small></span><button className="text-button" onClick={logout}>Đăng xuất</button></div></header>
       <main className="main-content">
-        <div className="page-heading"><div><span className="eyebrow">BI DASHBOARD / BẢN THỬ NGHIỆM</span><h1>{active.label}</h1><p>{descriptions[page]}</p></div><span className="page-number">{active.number} / 08</span></div>
+        <div className="page-heading"><div><span className="eyebrow">BI DASHBOARD / BẢN THỬ NGHIỆM</span><h1>{active.label}</h1><p>{descriptions[page]}</p></div><span className="page-number">{active.number} / 09</span></div>
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
         {actor.role === 'VIEWER' && <div className="notice" role="status">Chế độ chỉ xem: tài khoản này không thể tạo, sửa hoặc xóa dữ liệu.</div>}
         {page === 'overview' && <Overview counts={[connections.length,datasets.length,charts.length,dashboards.length]} go={setPage} dashboards={dashboards} />}
         {page === 'imports' && <ImportsPage canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
         {page === 'connections' && <ConnectionsPage connections={connections} done={done} />}
         {page === 'datasets' && <DatasetsPage connections={connections} datasets={datasets} done={done} />}
+        {page === 'exploration' && <ExplorationPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} />}
         {page === 'sql' && <SqlPage connections={connections} done={done} />}
-        {page === 'charts' && <ChartsPage datasets={datasets} charts={charts} done={done} />}
+        {page === 'charts' && <ChartsPage canEdit={actor.role !== 'VIEWER'} datasets={datasets} charts={charts} done={done} />}
         {page === 'dashboards' && <DashboardsPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}
         {page === 'chat' && <ChatPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
         {page === 'security' && <SecurityPage />}

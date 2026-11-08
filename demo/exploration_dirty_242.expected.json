@@ -1,0 +1,11 @@
+{
+  "rows": 242,
+  "columns": 10,
+  "originalMissingCells": 3,
+  "originalInvalidCells": 3,
+  "currentMissingCells": 6,
+  "duplicateRows": 2,
+  "revenueValidCount": 238,
+  "revenueSum": 1079769.0,
+  "revenueMean": 4536.844537815126
+}

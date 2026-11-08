@@ -28,10 +28,21 @@ public class Chat {
   private final Charts charts;
   private final Dashboards dashboards;
   private final DashboardTemplates templates;
+  private Statistics statistics;
+  private DatasetExploration exploration;
+  @org.springframework.beans.factory.annotation.Autowired
+  void explorationServices(Statistics statistics,DatasetExploration exploration) {
+    this.statistics=statistics;this.exploration=exploration;
+  }
 
   record AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,
       String templateId,String dashboard_name,Map<String,String> mapping,
-      List<Map<String,Object>> charts,String clarification,String explanation) {}
+      List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config) {
+    AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,String templateId,
+        String dashboard_name,Map<String,String> mapping,List<Map<String,Object>> charts,String clarification,String explanation) {
+      this(request_id,intent,query_config,useTemplate,templateId,dashboard_name,mapping,charts,clarification,explanation,null);
+    }
+  }
 
   Chat(JdbcTemplate db,Datasets datasets,DatasetAnalysis analysis,Auth auth,ObjectMapper mapper,
        @Value("${poc.ai.service.url:http://127.0.0.1:8000}") String aiServiceUrl,
@@ -147,6 +158,32 @@ public class Chat {
       extra.put("has_data",true);
       extra.put("row_count",data.get("rowCount"));
       result.put("data",data);
+      Map<String,Object> presentation=ChatAnalysisPresentation.query(datasetId,data,plan.query_config());
+      extra.put("analysis_result",presentation);
+      result.put("analysis_result",presentation);
+    } else if("statistical".equals(plan.intent())) {
+      Map<String,Object> report=statistics.execute(datasetId,plan.statistics_config(),actor);
+      extra.put("analysis_result",report);extra.put("statistics_config",plan.statistics_config());
+      result.put("analysis_result",report);
+      answer=Objects.toString(report.get("summary"),"Đã tính kết quả thống kê trên dataset.");
+      if(report.containsKey("conclusion")) answer+="\n"+report.get("conclusion");
+    } else if("explore".equals(plan.intent())) {
+      Map<String,Object> report=exploration.report(datasetId);
+      @SuppressWarnings("unchecked") var columns=(List<Map<String,Object>>)report.get("columns");
+      List<Map<String,Object>> rows=new ArrayList<>();
+      for(var column:columns){Map<String,Object> row=new LinkedHashMap<>();
+        for(String key:List.of("name","type","nullCount","missingCount","missingRate","distinctCount","invalidCount"))row.put(key,column.get(key));rows.add(row);}
+      var data=Map.<String,Object>of("datasetId",datasetId,"columns",List.of("name","type","nullCount","missingCount","missingRate","distinctCount","invalidCount"),"rows",rows,"rowCount",rows.size(),"truncated",false);
+      @SuppressWarnings("unchecked") var overview=(Map<String,Object>)report.get("overview");
+      @SuppressWarnings("unchecked") var quality=(Map<String,Object>)report.get("quality");
+      answer="Dataset có "+overview.get("rowCount")+" dòng, "+overview.get("columnCount")+" cột dữ liệu.\n"+
+          "Ô thiếu hiện tại: "+quality.get("missingCells")+"; giá trị số không hữu hạn: "+quality.get("invalidCells")+"; dòng trùng dư: "+quality.get("duplicateRows")+".\n"+
+          "Bảng bên dưới có kiểu dữ liệu, tỷ lệ thiếu và số giá trị duy nhất từng cột. Phân tích chỉ đọc, không tự sửa/xóa dữ liệu.";
+      Map<String,Object> presentation=new LinkedHashMap<>();
+      presentation.put("schemaVersion",1);presentation.put("kind","query");presentation.put("status","success");presentation.put("title","Khám phá chất lượng dataset");
+      presentation.put("summary",answer);presentation.put("data",data);presentation.put("warnings",report.get("warnings"));presentation.put("charts",List.of());
+      presentation.put("provenance",Map.of("engine","PostgreSQL profiling","scope","dataset-definition","sampled",false));
+      extra.put("analysis_result",presentation);extra.put("exploration",report);result.put("analysis_result",presentation);
     } else if("create_dashboard".equals(plan.intent())) {
       String name=bounded(plan.dashboard_name(),120,"Tên dashboard");
       UUID dashboardId;
@@ -190,10 +227,17 @@ public class Chat {
   static List<Map<String,Object>> customSpecs(List<Map<String,Object>> proposed,UUID datasetId) {
     if(proposed==null || proposed.size()<2 || proposed.size()>4) throw Api.bad("Dashboard custom cần từ 2 đến 4 biểu đồ");
     List<Map<String,Object>> specs=new ArrayList<>();
-    Set<String> allowed=Set.of("name","chartType","dimension","metric","aggregate","timeGrain");
+    Set<String> allowed=Set.of("name","chartType","dimension","metric","aggregate","timeGrain","seriesDimension","numericColumns","binCount","latitude","longitude","labelColumn");
     for(var raw:proposed) {
       if(raw==null || !allowed.containsAll(raw.keySet())) throw Api.bad("Cấu hình biểu đồ AI không hợp lệ");
-      for(var value:raw.values()) if(value!=null && !(value instanceof String)) throw Api.bad("Thuộc tính biểu đồ cần chuỗi");
+      for(var entry:raw.entrySet()){
+        Object value=entry.getValue();if(value==null)continue;
+        if(entry.getKey().equals("numericColumns")){
+          if(!(value instanceof List<?> items) || items.size()<2 || items.size()>8 || items.stream().anyMatch(v->!(v instanceof String)))throw Api.bad("Heatmap cần 2–8 tên cột");
+        } else if(entry.getKey().equals("binCount")){
+          try{int n=new java.math.BigDecimal(value.toString()).intValueExact();if(n<2 || n>50)throw new IllegalArgumentException();}catch(Exception e){throw Api.bad("Số khoảng phải là số nguyên từ 2 đến 50");}
+        } else if(!(value instanceof String))throw Api.bad("Thuộc tính biểu đồ cần chuỗi");
+      }
       Map<String,Object> spec=new LinkedHashMap<>(raw);
       spec.put("name",bounded(Api.text(raw,"name"),120,"Tên biểu đồ"));
       spec.put("datasetId",datasetId.toString());

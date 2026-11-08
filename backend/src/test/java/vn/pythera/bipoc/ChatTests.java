@@ -27,6 +27,19 @@ class ChatTests {
   private final Auth.Actor admin=new Auth.Actor(UUID.randomUUID(),"test","ADMIN");
   private final Auth.Actor viewer=new Auth.Actor(UUID.randomUUID(),"viewer","VIEWER");
 
+  @Test void statisticalResultsComeFromTrustedEngineAndArePersisted()throws Exception {
+    Statistics engine=mock(Statistics.class);DatasetExploration exploration=mock(DatasetExploration.class);
+    chat.explorationServices(engine,exploration);UUID dataset=UUID.randomUUID();
+    var config=mapper.readTree("{\"operation\":\"shapiro_wilk\",\"column\":\"amount\"}");
+    var report=Map.<String,Object>of("schemaVersion",1,"summary","Real engine result","conclusion","Conditional conclusion");
+    when(engine.execute(dataset,config,admin)).thenReturn(report);
+    var plan=new Chat.AIResponse("id","statistical",null,null,null,null,null,null,null,"Fake p=0",config);
+    var response=chat.executePlan(UUID.randomUUID(),dataset,"normality",plan,admin);
+    assertSame(report,response.get("analysis_result"));assertFalse(response.get("answer").toString().contains("Fake"));
+    verify(engine).execute(dataset,config,admin);verifyNoInteractions(analysis,charts,dashboards);
+    verify(db,times(2)).update(startsWith("INSERT INTO chat_messages"),any(Object[].class));
+  }
+
   @Test void viewerCannotStartOrExecuteOrDeleteChat() {
     assertEquals(403,assertThrows(Api.Failure.class,()->chat.createConversation(UUID.randomUUID(),"test",viewer)).status);
     assertEquals(403,assertThrows(Api.Failure.class,()->chat.sendMessage(UUID.randomUUID(),"sum",viewer)).status);
@@ -71,6 +84,21 @@ class ChatTests {
   @Test void customChartsCannotOverrideDatasetOrSupplySQL() {
     var spec=Map.<String,Object>of("name","Chart","sql","SELECT * FROM app_users");
     assertThrows(Api.Failure.class,()->Chat.customSpecs(List.of(spec,spec),UUID.randomUUID()));
+  }
+  @Test void customChartsPreserveTypedHistogramAndHeatmapOptions() {
+    UUID dataset=UUID.randomUUID();
+    var histogram=Map.<String,Object>of("name","Distribution","chartType","histogram","metric","amount","aggregate","count","binCount",10);
+    var heatmap=Map.<String,Object>of("name","Correlation","chartType","heatmap","aggregate","count","numericColumns",List.of("amount","quantity"));
+    var specs=Chat.customSpecs(List.of(histogram,heatmap),dataset);
+    assertEquals(10,specs.get(0).get("binCount"));
+    assertEquals(List.of("amount","quantity"),specs.get(1).get("numericColumns"));
+    assertEquals(dataset.toString(),specs.get(1).get("datasetId"));
+  }
+  @Test void customChartsRejectMalformedTypedOptions() {
+    for(var options:List.of(Map.of("binCount",2.5),Map.of("binCount",100),Map.of("numericColumns",List.of("amount",42)))) {
+      Map<String,Object> spec=new HashMap<>(options);spec.put("name","Bad");spec.put("chartType","heatmap");
+      assertThrows(Api.Failure.class,()->Chat.customSpecs(List.of(spec,spec),UUID.randomUUID()));
+    }
   }
   @Test void emptyAndNullResultsRemainDistinct() {
     assertTrue(Chat.formatAnswer(Map.of("rows",List.of())).contains("Không tìm thấy"));

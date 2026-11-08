@@ -43,6 +43,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\seed-demo.ps1
 
 Script nạp `public.orders` và `public.products` vào database `bi_poc_source`, rồi tạo kết nối **PostgreSQL · Bán hàng mẫu**, dataset, biểu đồ và dashboard mẫu. Trong **SQL Lab**, chọn kết nối này khi truy vấn `public.orders`. Kết nối **CSV imports (read-only)** dùng database khác; bảng CSV có tên `uploads.csv_...` mới sau mỗi lần nhập.
 
+## Khám phá dữ liệu và thống kê
+
+Có màn hình **Khám phá dữ liệu** để xem profiling, dữ liệu thiếu, trùng lặp, lịch sử sai kiểu CSV và thống kê từng cột. Form phân tích nâng cao chạy SciPy thật trên dataset đã chọn: thống kê mô tả, Pearson/Spearman, IQR/Z-score và bảy kiểm định. Chat AI hỗ trợ gọi cùng luồng và lưu kết quả để mở lại.
+
+Xem [hợp đồng tích hợp và giới hạn](docs/EXPLORATION_INTEGRATION.md). File [CSV giả lập có dữ liệu bẩn](demo/exploration_dirty_242.csv) có **242 dòng, 3 ô thiếu và 3 ô sai kiểu lúc nhập, 2 dòng trùng dư, một ngoại lệ doanh thu 999999**. Sau nhập, ô sai kiểu chuyển NULL nên báo cáo hiện tại có 6 ô thiếu. Không tự xóa dòng hoặc sửa dữ liệu gốc.
+
 ## Phát triển cùng nhóm
 
 Mỗi người clone repo về máy riêng, tạo nhánh chức năng và gửi Pull Request vào `main`. Xem [quy trình làm nhóm](CONTRIBUTING.md), [cách chạy khi sửa code](docs/DEVELOPMENT.md) và [API hiện có](docs/API.md).

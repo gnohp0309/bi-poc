@@ -115,3 +115,20 @@ Dataset/dashboard do CSV sinh cần xóa qua `/imports/{id}`, không xóa trực
 ## Chat AI
 
 Đã có GET/POST /chat/conversations, GET/DELETE /chat/conversations/{id} và POST /chat/message. Chat dùng phiên Bearer hiện tại; tạo/xóa/gửi yêu cầu cần Admin/Analyst, lịch sử chỉ cho chủ sở hữu. Xem [hợp đồng hiện hành, ví dụ và cách chạy FastAPI](CHAT_AI.md). API phân tích có cấu trúc và template vẫn giữ nguyên hợp đồng cũ.
+
+
+Các dạng biểu đồ mở rộng và trường cấu hình mới được mô tả tại [VISUALIZATIONS](VISUALIZATIONS.md). Hợp đồng này bổ sung cho API chart cơ bản ở trên.
+
+
+Task 5 bổ sung API đổi tên, sửa chart theo dashboard và lưu lưới x/y/w/h; xem [DASHBOARD_EDITOR](DASHBOARD_EDITOR.md). Payload chartIds cũ vẫn được hỗ trợ và đặt lại lưới hai cột theo thứ tự.
+
+### Dashboard filters and drill-down
+See [Dashboard interaction](DASHBOARD_INTERACTION.md) for GET dashboard filter metadata, POST dashboard query and POST chart drill contracts, dataset scoping, limits and freshness behavior.
+
+### Template validation and preview
+
+`POST /api/dashboard-templates/{id}/preview` accepts `{datasetId,mapping}` and returns `{eligible,issues,warnings,charts,mapping}` without writes. Template catalogue now includes chart blueprints and default geometry. Creation validates again and returns `dashboardId` plus warnings. See [Dashboard templates](DASHBOARD_TEMPLATES.md).
+
+### Dashboard file export
+
+PNG/PDF/XLSX use the authenticated client snapshot already returned by dashboard query; exporting makes no additional data query and adds no export endpoint. See [Dashboard export](DASHBOARD_EXPORT.md) for snapshot/filter semantics, formats, limits and browser tests.

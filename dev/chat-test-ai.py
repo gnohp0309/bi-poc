@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ai-service"))
 import main
+from app.routers import legacy_analyze
 import uvicorn
 
 
@@ -44,12 +45,12 @@ def fixture_plan(request):
         plan = {"intent":"create_dashboard","dashboard_name":"Chat smoke "+q,"useTemplate":False,"charts":[
             {"name":"Chat smoke Revenue","chartType":"bar","dimension":"region","metric":"amount","aggregate":"sum"},
             {"name":"Chat smoke Orders","chartType":"pie","dimension":"missing_column" if q == "custom-partial" else "category","metric":"*","aggregate":"count"}]}
-    return main.AIPlan.model_validate(plan)
+    return legacy_analyze.AIPlan.model_validate(plan)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port",type=int,default=8000)
     args = parser.parse_args()
-    main.generate_plan = fixture_plan
+    legacy_analyze.generate_plan = fixture_plan
     uvicorn.run(main.app,host="127.0.0.1",port=args.port,log_level="warning")

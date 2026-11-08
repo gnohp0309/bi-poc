@@ -70,12 +70,19 @@ CREATE TABLE IF NOT EXISTS dashboards (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE charts ADD COLUMN IF NOT EXISTS time_grain TEXT CHECK (time_grain IS NULL OR time_grain = 'month');
+ALTER TABLE charts ADD COLUMN IF NOT EXISTS config_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE charts DROP CONSTRAINT IF EXISTS charts_chart_type_check;
+ALTER TABLE charts ADD CONSTRAINT charts_chart_type_check CHECK (chart_type IN ('bar','line','pie','donut','kpi','histogram','scatter','heatmap','map','stacked-bar','stacked-area'));
 CREATE TABLE IF NOT EXISTS dashboard_charts (
   dashboard_id UUID NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
   chart_id UUID NOT NULL REFERENCES charts(id) ON DELETE CASCADE,
   position INTEGER NOT NULL,
   PRIMARY KEY (dashboard_id,chart_id)
 );
+ALTER TABLE dashboard_charts ADD COLUMN IF NOT EXISTS grid_x INTEGER;
+ALTER TABLE dashboard_charts ADD COLUMN IF NOT EXISTS grid_y INTEGER;
+ALTER TABLE dashboard_charts ADD COLUMN IF NOT EXISTS grid_w INTEGER;
+ALTER TABLE dashboard_charts ADD COLUMN IF NOT EXISTS grid_h INTEGER;
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY,
   actor_id UUID REFERENCES app_users(id),

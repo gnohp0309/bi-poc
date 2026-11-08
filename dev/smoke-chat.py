@@ -86,6 +86,12 @@ def run():
         cid,answer=ask("total")
         assert answer["data"]["rows"][0]["revenue"]==32.7,answer
         assert "32.7" in answer["answer"],answer
+        presentation = answer["analysis_result"]
+        assert presentation["schemaVersion"] == 1 and presentation["kind"] == "query"
+        assert presentation["data"]["rows"][0]["revenue"] == 32.7
+        assert presentation["charts"][0]["chartType"] == "kpi"
+        assert presentation["charts"][0]["rows"][0]["value"] == 32.7
+        assert "pValue" not in presentation and "conclusion" not in presentation
         _,followup=ask("followup",cid=cid)
         assert followup["data"]["rows"][0]["average"]==16.35,followup
         saved=call("/chat/conversations/"+cid,token=admin)
