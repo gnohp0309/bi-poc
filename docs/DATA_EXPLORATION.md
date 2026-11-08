@@ -42,3 +42,8 @@ Có thể thêm `-BaseUrl http://127.0.0.1:8082/api`. Script tạo và dọn fix
 
 
 Cột số có nút xem histogram theo khoảng, tổng hợp trực tiếp trên toàn dataset; xem [VISUALIZATIONS](VISUALIZATIONS.md). Bảng top values vẫn tách riêng với histogram.
+
+
+## Nối engine và lịch sử lỗi từng cột
+
+Xem [EXPLORATION_INTEGRATION](EXPLORATION_INTEGRATION.md). Báo cáo CSV bổ sung importMissingCount/importInvalidCount/importInvalidExamples từng cột, tách khỏi NULL hiện tại. Form thống kê gọi engine thật, không dùng fixture.

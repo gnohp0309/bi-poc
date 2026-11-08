@@ -2,7 +2,7 @@
 
 Task giao diện sử dụng một envelope `analysis_result` có phiên bản trong `chat_messages.metadata_json`. Không thêm phép tính kiểm định vào frontend và không nhận p-value do LLM tự viết. Spring Boot hiện tự tạo envelope cho nhánh query từ kết quả SQL đã thực thi; vẫn giữ `data`, `query_config` và response `answer` cũ để tương thích.
 
-**Giới hạn tích hợp:** repo hiện chưa có Statistical Engine thực thi các kiểm định của Tú. Renderer kiểm định và hợp đồng dưới đây đã có, nhưng engine cần trả/lưu envelope này qua luồng backend đáng tin cậy. Không thêm endpoint cho client tự ghi kết quả và không mở rộng AIPlan để LLM tự gửi số liệu kiểm định. Chưa thể dùng câu hỏi kiểm định trong chat để coi là một luồng tính toán hoàn chỉnh.
+**Tích hợp hiện tại:** Statistical Engine đã nối qua Spring Boot trên dataset thật. Nhánh statistical lưu envelope bên dưới từ engine, không nhận kết quả tính toán từ LLM. Xem [API, quy tắc và kiểm thử](EXPLORATION_INTEGRATION.md). Fixture vẫn chỉ phục vụ test renderer.
 
 ## Giao diện
 

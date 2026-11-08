@@ -1,4 +1,4 @@
-param([string]$BaseUrl = 'http://127.0.0.1:8081/api')
+param([string]$BaseUrl = 'http://127.0.0.1:8081/api', [int]$SourcePort=5433)
 $ErrorActionPreference='Stop'; $base=$BaseUrl.TrimEnd('/')
 function Assert($condition,$message){if(-not $condition){throw $message}}
 function Login($user){Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body (@{username=$user;password='Demo2026!'}|ConvertTo-Json -Compress)}
@@ -14,7 +14,7 @@ function Reject($spec,$status=400){
 }
 $conn=$null;$dashboard=$null;$ids=@()
 try{
-  $conn=Call 'POST' '/connections' @{name='Visualization smoke';host='127.0.0.1';port=5433;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
+  $conn=Call 'POST' '/connections' @{name='Visualization smoke';host='127.0.0.1';port=$SourcePort;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
   $sql="SELECT *,5::numeric AS constant FROM (VALUES (1::numeric,2::numeric,10::numeric,'A',DATE '2025-01-01',10::numeric,106::numeric),(2,4,20,'B',DATE '2025-01-02',11,107),(3,6,30,'A',DATE '2025-02-01',NULL,108),(4,8,NULL,'B',DATE '2025-02-02',999,109),(NULL,10,40,'A',NULL,12,108)) t(x,y,amount,region,event_date,lat,lon)"
   $dataset=Call 'POST' '/datasets' @{connectionId=$conn.id;name='Visualization fixture';kind='VIRTUAL';sql=$sql}
   $specs=@(

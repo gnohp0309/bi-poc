@@ -86,9 +86,26 @@ class ChartSpec(StrictModel):
 
 
 
+class StatisticsConfig(StrictModel):
+    operation: Literal["descriptive", "correlation", "outlier", "shapiro_wilk", "independent_ttest", "paired_ttest", "anova", "chi_square", "mann_whitney", "kruskal_wallis"]
+    columns: list[str] | None = Field(default=None, min_length=1, max_length=10)
+    column: str | None = None
+    value_column: str | None = None
+    group_column: str | None = None
+    group_values: list[str | int | float | bool] | None = Field(default=None,min_length=2,max_length=50)
+    column_before: str | None = None
+    column_after: str | None = None
+    column1: str | None = None
+    column2: str | None = None
+    method: Literal["pearson","spearman","iqr","zscore"] | None = None
+    threshold: float | None = Field(default=None,gt=0,le=100)
+    alpha: float | None = Field(default=None,ge=.01,le=.1)
+    equal_variance: bool | None = None
+
 class AIPlan(StrictModel):
-    intent: Literal["query", "create_dashboard", "clarify"]
+    intent: Literal["query", "create_dashboard", "clarify", "statistical", "explore"]
     query_config: AnalysisConfig | None = None
+    statistics_config: StatisticsConfig | None = None
     useTemplate: bool | None = None
     templateId: Literal["sales-overview", "product-analysis", "order-status"] | None = None
     dashboard_name: str | None = Field(default=None, min_length=1, max_length=120)
@@ -99,6 +116,8 @@ class AIPlan(StrictModel):
 
     @model_validator(mode="after")
     def complete_plan(self):
+        if self.intent == "statistical" and self.statistics_config is None:
+            raise ValueError("statistical requires statistics_config")
         if self.intent == "query" and self.query_config is None:
             raise ValueError("query requires query_config")
         if self.intent == "clarify" and not self.clarification:
@@ -142,8 +161,15 @@ class ClarifyDecision(StrictModel):
     clarification: str = Field(min_length=1, max_length=2000)
 
 
+class StatisticalDecision(StrictModel):
+    intent: Literal["statistical"]
+    statistics_config: StatisticsConfig
+
+class ExploreDecision(StrictModel):
+    intent: Literal["explore"]
+
 class GeneratedPlan(StrictModel):
-    decision: QueryDecision | TemplateDecision | CustomDecision | ClarifyDecision
+    decision: QueryDecision | TemplateDecision | CustomDecision | ClarifyDecision | StatisticalDecision | ExploreDecision
 
 
 def build_prompt(request: AnalyzeRequest) -> str:
@@ -162,7 +188,18 @@ map (latitude,longitude là tên cột số thực, metric/aggregate, labelColum
 stacked-bar/stacked-area (dimension, seriesDimension, metric, aggregate; area cần dimension ngày, timeGrain=month tùy chọn).
 Chỉ chọn dạng có đủ cột phù hợp; thiếu tọa độ hay cột số thì hỏi rõ. Không tự tính tương quan hoặc chia khoảng trong câu trả lời.
 
-3 intent:
+Các nhánh bổ sung:
+- explore: câu hỏi số dòng/cột, cấu trúc, kiểu dữ liệu, NULL/thiếu, tỷ lệ thiếu, distinct từng cột, dòng trùng, chất lượng dataset. Trả {"decision":{"intent":"explore"}}; backend chạy profiling thật.
+- statistical: thống kê median/mode/std/variance/quartile/phân phối, tương quan, ngoại lệ, kiểm định. Trả statistics_config (CHỈ cấu hình, KHÔNG statistic/p_value/kết quả).
+  descriptive: columns tên cột số; correlation: columns ít nhất 2 cột số, method pearson/spearman.
+  outlier: column số, method iqr/zscore, threshold nếu yêu cầu.
+  shapiro_wilk: column số; independent_ttest/mann_whitney/anova/kruskal_wallis: value_column số, group_column, group_values nếu chỉ chọn một số nhóm.
+  paired_ttest: column_before và column_after cùng đối tượng mỗi dòng. chi_square: column1 và column2 phân loại.
+  alpha mặc định .05; independent_ttest dùng Welch equal_variance=false mặc định. Chỉ dùng equal_variance=true khi được yêu cầu có căn cứ.
+  Thiếu biến, nhóm hoặc thiết kế ghép cặp chưa rõ thì clarify, không tự khẳng định giả định. Không trả thuộc tính null không cần thiết.
+  Insights/nhận xét tổng quan dữ liệu: dùng explore để backend dựa trên profiling thực tế.
+  Ví dụ: {"decision":{"intent":"statistical","statistics_config":{"operation":"descriptive","columns":["amount"]}}}
+Các nhánh BI hiện có:
 1. query: query_config dùng đúng hợp đồng:
    groupBy: [{column, timeGrain?: day/month/year, alias?: tên_ASCII}],
    metrics: [{column, aggregate: sum/avg/min/max/count/count_distinct, alias: tên_ASCII}],
@@ -193,9 +230,31 @@ Ví dụ tạo dashboard khi có ngày, doanh thu, khu vực, danh mục:
 Tên cột trong ví dụ chỉ là minh họa; phải chọn tên cột thực tế trong metadata.
 Không tự nêu số doanh thu: backend lấy từ kết quả truy vấn thật.
 """
-    return instructions + "
-INPUT_JSON:
-" + request.model_dump_json(exclude_none=True)
+    instructions += "\nQUY TẮC MÃ HÓA: Với nhánh statistical, statistics_config là CHUỖI JSON chứa object cấu hình. Với custom dashboard, charts là CHUỖI JSON chứa mảng cấu hình. Không trả object/mảng trực tiếp ở hai trường này. Backend giải mã và kiểm tra kiểu đầy đủ. Các trường khác giữ nguyên.\n"
+    return instructions + "\nINPUT_JSON:\n" + request.model_dump_json(exclude_none=True)
+
+
+def provider_schema() -> dict:
+    # Bound provider grammar complexity; decoded JSON still passes strict validation.
+    schema=GeneratedPlan.model_json_schema()
+    definitions=schema["$defs"]
+    definitions["CustomDecision"]["properties"]["charts"]={"type":"string","description":"JSON array of 2 to 4 chart configurations"}
+    definitions["StatisticalDecision"]["properties"]["statistics_config"]={"type":"string","description":"JSON object with operation and applicable parameters"}
+    reachable=set()
+    def visit(value):
+        if isinstance(value,dict):
+            ref=value.get("$ref","")
+            if ref.startswith("#/$defs/"):
+                name=ref.split("/")[-1]
+                if name not in reachable:
+                    reachable.add(name);visit(definitions[name])
+            for key,item in value.items():
+                if key!="$defs":visit(item)
+        elif isinstance(value,list):
+            for item in value:visit(item)
+    visit(schema)
+    schema["$defs"]={name:value for name,value in definitions.items() if name in reachable}
+    return schema
 
 
 def generate_plan(request: AnalyzeRequest) -> AIPlan:
@@ -213,9 +272,14 @@ def generate_plan(request: AnalyzeRequest) -> AIPlan:
             automatic_continuation=False,
             generation_config={"max_output_tokens":4096},
             response_format={"type": "text", "mime_type": "application/json",
-                             "schema": GeneratedPlan.model_json_schema()},
+                             "schema": provider_schema()},
         )
-    generated = GeneratedPlan.model_validate_json(response.output_text)
+    decoded=json.loads(response.output_text)
+    decision=decoded.get("decision",{})
+    if isinstance(decision,dict):
+        for field in ("charts","statistics_config"):
+            if isinstance(decision.get(field),str):decision[field]=json.loads(decision[field])
+    generated = GeneratedPlan.model_validate(decoded)
     return AIPlan.model_validate(generated.decision.model_dump(exclude_none=True))
 
 

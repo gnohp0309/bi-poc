@@ -47,6 +47,11 @@ public class DatasetExploration {
     var metadata=analysis.metadata(id);
     List<Map<String,Object>> imports=db.queryForList("SELECT row_count,missing_count,invalid_count,columns_json,created_at FROM file_imports WHERE dataset_id=?",id);
     boolean imported=!imports.isEmpty();
+    Map<String,com.fasterxml.jackson.databind.JsonNode> importColumns=new HashMap<>();
+    if(imported)try {
+      var saved=new com.fasterxml.jackson.databind.ObjectMapper().readTree(imports.get(0).get("columns_json").toString());
+      for(var item:saved)importColumns.put(item.path("name").asText(),item);
+    }catch(java.io.IOException e){throw new IllegalStateException("Invalid stored import quality",e);}
     var columns=metadata.columns().stream().filter(col->!imported || !Set.of("row_id","record_group").contains(col.name())).toList();
     if(columns.size()>128) throw new Api.Failure(422,"Báo cáo hiện hỗ trợ tối đa 128 cột; hãy tạo dataset chỉ gồm các cột cần khám phá");
     String source=datasets.source(dataset);
@@ -83,6 +88,13 @@ public class DatasetExploration {
         profile.put("name",col.name());profile.put("label",col.label());profile.put("type",col.type());profile.put("kind",col.kind());
         profile.put("missingCount",missing);profile.put("blankCount",rowCount-present-((Number)profile.get("nullCount")).longValue());
         profile.put("invalidCount",invalid);profile.put("missingRate",rowCount==0?null:100.0*missing/rowCount);
+        if(importColumns.containsKey(col.name())) {
+          var original=importColumns.get(col.name());
+          profile.put("importMissingCount",original.path("missing").asLong());
+          profile.put("importInvalidCount",original.path("invalid").asLong());
+          List<String> examples=new ArrayList<>();for(var example:original.path("invalidExamples"))examples.add(example.asText());
+          profile.put("importInvalidExamples",examples);
+        }
         profile.put("statisticsAvailable",numeric);
         profile.put("statisticsNote",numeric?"Bỏ qua giá trị thiếu/không hữu hạn. Độ lệch chuẩn và phương sai mẫu cần ít nhất 2 giá trị; quartile nội suy bằng số thực.":"Thống kê số không áp dụng cho kiểu cột này.");
         // Bound the result, never the source population. JSON keeps JDBC-only types out of responses.

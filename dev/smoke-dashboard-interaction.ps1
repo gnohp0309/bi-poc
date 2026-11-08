@@ -1,4 +1,4 @@
-param([string]$BaseUrl='http://127.0.0.1:8081/api')
+param([string]$BaseUrl='http://127.0.0.1:8081/api', [int]$SourcePort=5433)
 $ErrorActionPreference='Stop';$base=$BaseUrl.TrimEnd('/')
 function Assert($condition,$message){if(-not $condition){throw $message}}
 function Login($name){Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body (@{username=$name;password='Demo2026!'}|ConvertTo-Json -Compress)}
@@ -7,7 +7,7 @@ function Call($method,$path,$body){$args=@{Method=$method;Uri="$base$path";Heade
 function Reject($path,$body,$status=400){try{Call 'POST' $path $body|Out-Null}catch{if($null -ne $_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq $status){return};throw};throw "Expected rejection for $path"}
 $conn=$null;$dash=$null
 try{
-  $conn=Call 'POST' '/connections' @{name='Dashboard interaction smoke';host='127.0.0.1';port=5433;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
+  $conn=Call 'POST' '/connections' @{name='Dashboard interaction smoke';host='127.0.0.1';port=$SourcePort;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
   $dataset=Call 'POST' '/datasets' @{connectionId=$conn.id;name='Interaction fixture';kind='VIRTUAL';sql="SELECT *,event_date::timestamp event_ts FROM (VALUES ('North','A',10::numeric,2::numeric,DATE '2025-01-01'),('North','B',20::numeric,3::numeric,DATE '2025-01-31'),('South','A',30::numeric,4::numeric,DATE '2025-02-01'),(NULL,'A',40::numeric,5::numeric,DATE '2025-02-15')) t(region,category,amount,quantity,event_date)"}
   $other=Call 'POST' '/datasets' @{connectionId=$conn.id;name='Other source';kind='VIRTUAL';sql="SELECT 'X'::text region,99::numeric amount,extract(epoch FROM clock_timestamp()) tick"}
   $dash=Call 'POST' '/dashboards' @{name='Interaction smoke'}

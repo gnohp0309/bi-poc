@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv(Path(__file__).parent / ".env")
 
 # Import routers
-from app.routers import stats_router, hypothesis_router, chat_router, legacy_analyze
+from app.routers import stats_router, hypothesis_router, chat_router, legacy_analyze, integration
 
 # Tạo FastAPI app
 app = FastAPI(
@@ -65,6 +65,7 @@ app.add_middleware(
 app.include_router(stats_router.router)
 app.include_router(hypothesis_router.router)
 app.include_router(chat_router.router)
+app.include_router(integration.router)
 app.include_router(legacy_analyze.router)  # Legacy /analyze endpoint
 
 

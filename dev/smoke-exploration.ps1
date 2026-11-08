@@ -1,4 +1,4 @@
-param([string]$BaseUrl = 'http://127.0.0.1:8081/api')
+param([string]$BaseUrl = 'http://127.0.0.1:8081/api', [int]$SourcePort=5433)
 $ErrorActionPreference = 'Stop'
 $base = $BaseUrl.TrimEnd('/')
 $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -21,7 +21,7 @@ function ExpectStatus($path,$status,$requestHeaders) {
 }
 $connection=$null; $import=$null; $fixturePath=$null
 try {
-  $connection=Call 'POST' '/connections' @{name='Exploration smoke';host='127.0.0.1';port=5433;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
+  $connection=Call 'POST' '/connections' @{name='Exploration smoke';host='127.0.0.1';port=$SourcePort;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
   $sql="SELECT * FROM (VALUES (10::numeric,'A',DATE '2025-01-01'),(20::numeric,'B',DATE '2025-01-02'),(20::numeric,'B',DATE '2025-01-02'),(NULL::numeric,' ',NULL::date)) AS t(""revenue value"", label, event_date)"
   $dataset=Call 'POST' '/datasets' @{connectionId=$connection.id;name='Exploration fixture';kind='VIRTUAL';sql=$sql}
   $report=Call 'GET' "/datasets/$($dataset.id)/exploration" $null

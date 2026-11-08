@@ -1,3 +1,4 @@
+import { StatisticsPanel } from './statistics-panel'
 import { useEffect, useState } from 'react'
 import type { Dataset } from './api'
 import { getExplorationReport, formatStatistic as fmt } from './exploration-api'
@@ -14,7 +15,7 @@ type Tab = typeof tabs[number][0]
 const percent = (n: number | null) => n === null ? '—' : `${fmt(n)}%`
 const bytes = (n: number) => n < 1024 ? `${fmt(n)} B` : n < 1048576 ? `${fmt(n / 1024)} KB` : `${fmt(n / 1048576)} MB`
 
-export function ExplorationPage({ datasets }: { datasets: Dataset[] }) {
+export function ExplorationPage({ datasets, canEdit }: { datasets: Dataset[]; canEdit: boolean }) {
   const [datasetId, setDatasetId] = useState('')
   const [tab, setTab] = useState<Tab>('overview')
   const [report, setReport] = useState<ExplorationReport | null>(null)
@@ -70,8 +71,8 @@ export function ExplorationPage({ datasets }: { datasets: Dataset[] }) {
             <SectionTitle label={tab === 'profiling' ? 'Profiling từng cột' : 'Dữ liệu thiếu từng cột'} />
             <label>Tìm cột<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tên cột, nhãn hoặc kiểu dữ liệu" /></label>
             <p className="muted">Giá trị thiếu gồm NULL và chuỗi chỉ chứa dấu cách. Giá trị số NaN/Infinity được tính riêng là không hợp lệ.</p>
-            <div className="table-scroll"><table><thead><tr><th>Cột</th><th>NULL</th><th>Chuỗi trống</th><th>Tổng thiếu</th><th>Tỷ lệ thiếu</th>{tab === 'profiling' && <><th>Hợp lệ</th><th>Duy nhất</th><th>Không hợp lệ</th></>}</tr></thead>
-              <tbody>{visible.map(c => <tr key={c.name}><td><button className="text-link" onClick={() => { setColumnName(c.name); setTab('statistics') }}>{c.label}</button><small className="exploration-column-name">{c.name}</small></td><td>{fmt(c.nullCount)}</td><td>{fmt(c.blankCount)}</td><td>{fmt(c.missingCount)}</td><td><div className="missing-rate"><progress max={100} value={c.missingRate ?? 0} aria-label={`Tỷ lệ thiếu ${c.name}`} />{percent(c.missingRate)}</div></td>{tab === 'profiling' && <><td>{fmt(c.validCount)}</td><td>{fmt(c.distinctCount)}</td><td>{fmt(c.invalidCount)}</td></>}</tr>)}</tbody></table></div>
+            <div className="table-scroll"><table><thead><tr><th>Cột</th><th>NULL</th><th>Chuỗi trống</th><th>Tổng thiếu</th><th>Tỷ lệ thiếu</th>{tab === 'profiling' && <><th>Hợp lệ</th><th>Duy nhất</th><th>Không hợp lệ hiện tại</th><th>Sai kiểu lúc nhập CSV</th></>}</tr></thead>
+              <tbody>{visible.map(c => <tr key={c.name}><td><button className="text-link" onClick={() => { setColumnName(c.name); setTab('statistics') }}>{c.label}</button><small className="exploration-column-name">{c.name}</small></td><td>{fmt(c.nullCount)}</td><td>{fmt(c.blankCount)}</td><td>{fmt(c.missingCount)}</td><td><div className="missing-rate"><progress max={100} value={c.missingRate ?? 0} aria-label={`Tỷ lệ thiếu ${c.name}`} />{percent(c.missingRate)}</div></td>{tab === 'profiling' && <><td>{fmt(c.validCount)}</td><td>{fmt(c.distinctCount)}</td><td>{fmt(c.invalidCount)}</td><td>{fmt(c.importInvalidCount)}</td></>}</tr>)}</tbody></table></div>
             {!visible.length && <Empty title="Không có cột phù hợp" text="Thử thay đổi từ khóa tìm kiếm." />}
           </>}
           {tab === 'quality' && <>
@@ -88,6 +89,7 @@ export function ExplorationPage({ datasets }: { datasets: Dataset[] }) {
             {column && <ColumnStatistics column={column} datasetId={datasetId} />}
           </>}
         </section>
+        <StatisticsPanel key={datasetId} datasetId={datasetId} columns={report.columns} canEdit={canEdit} />
         <section className="surface"><SectionTitle label="Phạm vi và lưu ý" /><ul>{report.warnings.map(w => <li key={w}>{w}</li>)}</ul></section>
       </>}
   </div>

@@ -27,6 +27,19 @@ class ChatTests {
   private final Auth.Actor admin=new Auth.Actor(UUID.randomUUID(),"test","ADMIN");
   private final Auth.Actor viewer=new Auth.Actor(UUID.randomUUID(),"viewer","VIEWER");
 
+  @Test void statisticalResultsComeFromTrustedEngineAndArePersisted()throws Exception {
+    Statistics engine=mock(Statistics.class);DatasetExploration exploration=mock(DatasetExploration.class);
+    chat.explorationServices(engine,exploration);UUID dataset=UUID.randomUUID();
+    var config=mapper.readTree("{\"operation\":\"shapiro_wilk\",\"column\":\"amount\"}");
+    var report=Map.<String,Object>of("schemaVersion",1,"summary","Real engine result","conclusion","Conditional conclusion");
+    when(engine.execute(dataset,config,admin)).thenReturn(report);
+    var plan=new Chat.AIResponse("id","statistical",null,null,null,null,null,null,null,"Fake p=0",config);
+    var response=chat.executePlan(UUID.randomUUID(),dataset,"normality",plan,admin);
+    assertSame(report,response.get("analysis_result"));assertFalse(response.get("answer").toString().contains("Fake"));
+    verify(engine).execute(dataset,config,admin);verifyNoInteractions(analysis,charts,dashboards);
+    verify(db,times(2)).update(startsWith("INSERT INTO chat_messages"),any(Object[].class));
+  }
+
   @Test void viewerCannotStartOrExecuteOrDeleteChat() {
     assertEquals(403,assertThrows(Api.Failure.class,()->chat.createConversation(UUID.randomUUID(),"test",viewer)).status);
     assertEquals(403,assertThrows(Api.Failure.class,()->chat.sendMessage(UUID.randomUUID(),"sum",viewer)).status);

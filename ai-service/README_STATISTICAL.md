@@ -1,3 +1,9 @@
+# Trạng thái tích hợp Statistical Engine
+
+Luồng sử dụng hiện tại và giới hạn được mô tả tại [EXPLORATION_INTEGRATION](../docs/EXPLORATION_INTEGRATION.md). Cổng mặc định 8000. Spring Boot xác thực và chuyển dataset thật đến /internal/statistics; đã bỏ fallback tạo dữ liệu ngẫu nhiên. Không dùng sample ID để chứng minh tính đúng trên dataset người dùng. Các kết quả là thống kê số thực có giả định và giới hạn, không cam kết theo giới hạn số học của thư viện hoặc sẵn sàng production.
+
+Phần dưới là tài liệu module ban đầu; các ví dụ sample/API trực tiếp cần dữ liệu do bridge cung cấp để chạy trong luồng tích hợp.
+
 # FastAPI Statistical Engine & Chat AI Service
 
 Service Python FastAPI cho phân tích thống kê chính xác và Chat AI thông minh, hỗ trợ POC tính năng "Khám phá dữ liệu" cho ứng dụng BI.
@@ -5,7 +11,7 @@ Service Python FastAPI cho phân tích thống kê chính xác và Chat AI thôn
 ## 🎯 Mục tiêu
 
 1. **Phân tách trách nhiệm tuyệt đối:** LLM KHÔNG BAO GIỜ tự tính toán số liệu thống kê. LLM CHỈ dùng để hiểu ý định, trích xuất tham số và diễn giải kết quả.
-2. **Tính toán chính xác 100%:** Tất cả phép tính được xử lý bởi Statistical Engine dựa trên scipy, statsmodels, pandas, numpy, pingouin.
+2. **Tính toán được kiểm tra bằng bộ dữ liệu đối chiếu:** Tất cả phép tính được xử lý bởi Statistical Engine dựa trên scipy, statsmodels, pandas, numpy, pingouin.
 3. **Đa ngôn ngữ:** Toàn bộ kết luận, giải thích, phản hồi Chat đều bằng **tiếng Việt**.
 
 ## 🏗️ Kiến trúc Hệ thống
@@ -85,11 +91,11 @@ python main.py
 .\start-ai-service.ps1
 ```
 
-Service sẽ chạy tại: http://127.0.0.1:8082
+Service sẽ chạy tại: http://127.0.0.1:8000
 
-- **API Documentation:** http://127.0.0.1:8082/docs
-- **ReDoc:** http://127.0.0.1:8082/redoc
-- **Health Check:** http://127.0.0.1:8082/health
+- **API Documentation:** http://127.0.0.1:8000/docs
+- **ReDoc:** http://127.0.0.1:8000/redoc
+- **Health Check:** http://127.0.0.1:8000/health
 
 ## 🧪 Chạy Tests
 
@@ -242,7 +248,7 @@ Sinh AI Insights từ kết quả phân tích.
 ```python
 import requests
 
-base_url = "http://127.0.0.1:8082"
+base_url = "http://127.0.0.1:8000"
 
 # 1. Hỏi Chat AI
 chat_response = requests.post(f"{base_url}/api/chat/ask", json={
@@ -308,7 +314,7 @@ ai-service/
    - Trích xuất tham số
    - Diễn giải kết quả thành tiếng Việt
    
-2. **Statistical Engine đảm bảo chính xác tuyệt đối:**
+2. **Statistical Engine đảm bảo theo giới hạn số học của thư viện:**
    - Sử dụng scipy, numpy, pandas, statsmodels
    - Có unit tests đối chiếu với các thư viện chuẩn
    

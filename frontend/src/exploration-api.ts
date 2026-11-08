@@ -4,6 +4,7 @@ export type ColumnProfile = {
   name: string; label: string; type: string; kind: string
   nullCount: number; blankCount: number; missingCount: number; missingRate: number | null
   validCount: number; distinctCount: number; invalidCount: number
+  importMissingCount?: number; importInvalidCount?: number; importInvalidExamples?: string[]
   statisticsAvailable: boolean; statisticsNote: string; modeNote: string
   min?: number | string | null; max?: number | string | null; mean?: number | null
   median?: number | null; q1?: number | null; q3?: number | null

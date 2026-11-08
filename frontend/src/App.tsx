@@ -98,7 +98,7 @@ export default function App() {
         {page === 'imports' && <ImportsPage canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
         {page === 'connections' && <ConnectionsPage connections={connections} done={done} />}
         {page === 'datasets' && <DatasetsPage connections={connections} datasets={datasets} done={done} />}
-        {page === 'exploration' && <ExplorationPage datasets={datasets} />}
+        {page === 'exploration' && <ExplorationPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} />}
         {page === 'sql' && <SqlPage connections={connections} done={done} />}
         {page === 'charts' && <ChartsPage canEdit={actor.role !== 'VIEWER'} datasets={datasets} charts={charts} done={done} />}
         {page === 'dashboards' && <DashboardsPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}

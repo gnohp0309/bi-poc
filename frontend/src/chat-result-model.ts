@@ -6,7 +6,7 @@ export type ResultTable = { columns: string[]; rows: Record<string, string | num
 export type AnalysisResult = {
   schemaVersion: 1; kind: 'query' | 'statistical_test'; status: 'success' | 'insufficient_data' | 'not_applicable' | 'error'
   title: string; summary?: string; method?: string; hypotheses?: { h0?: string; h1?: string }; alpha?: ResultValue
-  sample?: { total?: ResultValue; used?: ResultValue; missing?: ResultValue; groups: { name: string; count: ResultValue }[] }
+  sample?: { total?: ResultValue; used?: ResultValue; missing?: ResultValue; excluded?: ResultValue; groups: { name: string; count: ResultValue }[] }
   statistic?: Measurement; pValue?: Measurement
   confidenceInterval?: { status: Measurement['status']; lower: ResultValue; upper: ResultValue; level?: ResultValue; reason?: string }
   effectSize?: Measurement
@@ -73,7 +73,7 @@ export function parseChatResult(metadataJson: string): ParsedChatResult {
   if (!result.data && parsed.table) result.data = parsed.table
   if (object(raw.hypotheses)) result.hypotheses = { h0: string(raw.hypotheses.h0), h1: string(raw.hypotheses.h1) }
   if (object(raw.sample)) result.sample = {
-    total: value(raw.sample.total), used: value(raw.sample.used), missing: value(raw.sample.missing),
+    total: value(raw.sample.total), used: value(raw.sample.used), missing: value(raw.sample.missing), excluded: value(raw.sample.excluded),
     groups: Array.isArray(raw.sample.groups) ? raw.sample.groups.filter(object).slice(0, 50).map(g => ({ name: string(g.name) || 'Nhóm chưa đặt tên', count: value(g.count) })) : [],
   }
   if (object(raw.confidenceInterval)) {

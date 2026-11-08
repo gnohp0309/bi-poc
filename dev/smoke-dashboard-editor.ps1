@@ -1,4 +1,4 @@
-param([string]$BaseUrl='http://127.0.0.1:8081/api')
+param([string]$BaseUrl='http://127.0.0.1:8081/api', [int]$SourcePort=5433)
 $ErrorActionPreference='Stop';$base=$BaseUrl.TrimEnd('/')
 function Assert($condition,$message){if(-not $condition){throw $message}}
 function Login($name){Invoke-RestMethod -Method Post -Uri "$base/auth/login" -ContentType 'application/json' -Body (@{username=$name;password='Demo2026!'}|ConvertTo-Json -Compress)}
@@ -7,7 +7,7 @@ function Call($method,$path,$body){$args=@{Method=$method;Uri="$base$path";Heade
 function Reject($method,$path,$body,$status=400){try{Call $method $path $body|Out-Null}catch{if($null -ne $_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq $status){return};throw};throw "Expected rejection for $path"}
 $conn=$null;$dashboards=@()
 try{
-  $conn=Call 'POST' '/connections' @{name='Dashboard editor smoke';host='127.0.0.1';port=5433;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
+  $conn=Call 'POST' '/connections' @{name='Dashboard editor smoke';host='127.0.0.1';port=$SourcePort;database='bi_poc_source';username='bi_reader';password='Reader2026!'}
   $dataset=Call 'POST' '/datasets' @{connectionId=$conn.id;name='Editor fixture';kind='VIRTUAL';sql="SELECT * FROM (VALUES ('A',10::numeric,2,DATE '2025-01-01'),('B',20::numeric,3,DATE '2025-02-01')) t(region,amount,quantity,event_date)"}
   $first=Call 'POST' '/charts' @{datasetId=$dataset.id;name='Original shared';chartType='bar';dimension='region';metric='amount';aggregate='sum'}
   $second=Call 'POST' '/charts' @{datasetId=$dataset.id;name='Second';chartType='line';dimension='event_date';metric='amount';aggregate='sum';timeGrain='month'}
