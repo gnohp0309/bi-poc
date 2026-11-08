@@ -177,6 +177,8 @@ Chờ hoàn tất, ẩn danh sách hội thoại nếu cần và cuộn trong kh
 3. Chạy **Thống kê mô tả** trên `c_amount`: count 500.000, mean 50,5; tổng 25.250.000.
 4. Nếu thử Shapiro–Wilk trên toàn bộ 500.000 dòng, hệ thống phải báo không đủ điều kiện vì giới hạn 3–5000, không tự lấy mẫu rồi gọi đó là toàn bộ dataset.
 
+**Lưu ý:** file lớn giả lập lặp lại 300 tổ hợp dữ liệu nên báo 499.700 dòng trùng dư là đúng với đầu vào này. Không dùng số đó để kết luận hệ thống nhập lỗi hoặc làm mất dữ liệu.
+
 **Lời nói:**
 
 > Nhóm cũng đã kiểm tra đường đi từ CSV 500 nghìn dòng đến engine thật. Thống kê mô tả tính trên toàn bộ dữ liệu. Với phương pháp có giới hạn cỡ mẫu như Shapiro–Wilk, hệ thống báo rõ giới hạn thay vì cố trả một p-value không phù hợp.
