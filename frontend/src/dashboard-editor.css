@@ -1,0 +1,15 @@
+.dashboard-grid-layout{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:32px;gap:16px;align-items:stretch;min-width:0}
+.dashboard-grid-layout.is-editing{background:repeating-linear-gradient(to bottom,#edf2eb 0,#edf2eb 1px,transparent 1px,transparent 48px);padding-bottom:48px}
+.dashboard-grid-tile.dashboard-chart{position:relative;min-height:0;display:flex;flex-direction:column;min-width:0;padding:18px}
+.dashboard-tile-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;flex:none}
+.dashboard-grid-tile .chart-head h3{overflow-wrap:anywhere}.dashboard-grid-tile .chart-head>div:first-child{min-width:0}
+.dashboard-grid-plot{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:auto;padding-top:8px}
+.dashboard-grid-plot .chart-canvas{flex:1;min-height:130px;height:auto}.dashboard-grid-plot .chart-kpi{flex:1;min-height:100px}.dashboard-grid-plot .hint{flex:none}
+.dashboard-move-handle{touch-action:none;cursor:move;background:#edf3eb;border:1px dashed #9ab39d;border-radius:4px;padding:5px 10px;font-size:11px;align-self:flex-start;margin-top:5px}
+.dashboard-resize-handle{touch-action:none;cursor:nwse-resize;position:absolute;right:3px;bottom:3px;width:27px;height:27px;border:1px solid #9ab39d;background:#edf3eb;border-radius:4px;color:#315d4b}
+.dashboard-position-form{font-size:10px;margin-top:8px;flex:none}.dashboard-position-form summary{cursor:pointer;color:#637d6c}.dashboard-position-form form{display:flex;gap:5px;align-items:end;flex-wrap:wrap;padding:8px 0}.dashboard-position-form label{flex:1;min-width:50px;margin:0}.dashboard-position-form input{padding:5px;min-width:0}.dashboard-position-form button{padding:6px;font-size:10px}
+.dashboard-layout-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dashboard-layout-actions p{margin:0;font-size:11px;color:#637d6c}
+.dashboard-rename-form{display:flex;gap:8px;align-items:end;max-width:560px;margin-top:14px}.dashboard-rename-form label{flex:1;margin:0}.dashboard-rename-form button{flex:none}
+.dashboard-chart-dialog{width:min(1100px,calc(100vw - 32px));max-height:90vh;overflow:auto;border:1px solid #ccdacd;border-radius:8px;padding:22px;color:#25312d;background:#f5f6f2}.dashboard-chart-dialog::backdrop{background:#1b3028aa}.dashboard-chart-dialog>h2{font-size:21px}.dashboard-chart-dialog .two-column{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.dashboard-chart-dialog .chart-preview .chart-canvas{height:320px}.dashboard-load-status{padding:20px}
+@media(max-width:700px){.dashboard-grid-layout{grid-template-columns:minmax(0,1fr);grid-auto-rows:auto}.dashboard-grid-tile.dashboard-chart{grid-column:auto!important;grid-row:auto!important;min-height:420px}.dashboard-grid-plot{min-height:270px}.dashboard-chart-dialog .two-column{grid-template-columns:minmax(0,1fr)}.dashboard-rename-form{flex-wrap:wrap}.dashboard-tile-actions{max-width:130px}}

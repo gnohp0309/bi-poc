@@ -121,3 +121,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\smoke-analysis.ps1
 Có thể truyền `-BaseUrl`, `-SourceHost`, `-SourcePort`, `-SourceDatabase` cho môi trường riêng. Script tạo dataset vật lý/ảo, nhập CSV mẫu, so sánh với số liệu mẫu/SQL độc lập, kiểm tra NULL, kiểu dữ liệu, bộ lọc, UTC, quyền và chống chèn lệnh qua giá trị lọc. Nó cũng tổng hợp dataset ảo được PostgreSQL tạo từ 500.000 dòng, đối chiếu COUNT=500.000 và SUM=25.250.000, kiểm tra giới hạn kết quả, ghi thời gian request và dọn kết nối/dataset/import thử trong `finally`. Kết nối CSV dùng chung và audit/session vẫn được giữ lại.
 
 Đây là kiểm tra tính đúng của phân tích trên dữ liệu sinh; không thay thế phép đo import CSV 500.000 dòng hoặc benchmark dữ liệu thật. JUnit kiểm tra thêm các ranh giới đầu vào và tham số hóa; CI chạy cả JUnit và smoke API với PostgreSQL riêng.
+
+
+Báo cáo tổng quan/profiling/chất lượng và thống kê mô tả chỉ đọc dùng endpoint riêng; xem [Khám phá dữ liệu](DATA_EXPLORATION.md).

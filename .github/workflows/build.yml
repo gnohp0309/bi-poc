@@ -54,6 +54,8 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Check frontend data and export contracts
+        run: node --experimental-strip-types --test dev/chat-results.test.mjs dev/dashboard-layout.test.mjs dev/template-mapping.test.mjs dev/dashboard-export.test.mjs
       - name: Verify and package backend
         working-directory: backend
         run: mvn -B verify
@@ -100,6 +102,29 @@ jobs:
       - name: Check dataset analysis, validation and 500000 rows
         shell: pwsh
         run: ./dev/smoke-analysis.ps1
+      - name: Check dashboard editor and grid persistence
+        shell: pwsh
+        run: ./dev/smoke-dashboard-editor.ps1
+      - name: Check dashboard filters, drill-down and live refresh
+        shell: pwsh
+        run: ./dev/smoke-dashboard-interaction.ps1
+      - name: Check advanced chart types and persistence
+        shell: pwsh
+        run: ./dev/smoke-visualizations.ps1
+      - name: Check dataset exploration and profiling
+        shell: pwsh
+        run: ./dev/smoke-exploration.ps1
+      - name: Check real PNG, PDF and Excel downloads
+        run: |
+          google-chrome --headless=new --no-sandbox --disable-dev-shm-usage --remote-debugging-port=9226 --user-data-dir=/tmp/bi-poc-export-browser http://127.0.0.1:8081 > /tmp/bi-poc-export-browser.log 2>&1 &
+          chrome_pid=$!
+          trap 'kill "$chrome_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:9226/json/version > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:9226/json/version > /dev/null
+          node dev/smoke-export.cjs
       - name: Start real FastAPI with a deterministic test provider
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

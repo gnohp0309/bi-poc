@@ -1,40 +1,159 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
-import type { Chart, Dashboard, DashboardDetail, Dataset } from './api'
-import { ChartCanvas, Empty, SectionTitle } from './ui'
-
+import type { Chart, ChartDefinition, Dashboard, DashboardDetail, Dataset } from './api'
+import { Empty, SectionTitle } from './ui'
 import { DashboardTemplateForm } from './dashboard-templates'
+import { DashboardGrid } from './dashboard-grid'
+import { appendItem, ordered, readLayout } from './dashboard-layout'
+import type { GridItem } from './dashboard-layout'
+import { ChartsPage } from './chart-builder'
+import { DashboardFilters, DashboardDrill } from './dashboard-interaction'
+import type { DashboardFilter } from './dashboard-interaction'
+import type { ChartData } from './api'
+import { DashboardExport, ExportContext } from './dashboard-export'
+import './dashboard-export.css'
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
-export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, initialId = '' }: { dashboards: Dashboard[]; charts: Chart[]; datasets: Dataset[]; canEdit: boolean; done: (message: string) => void; initialId?: string }) {
+export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, initialId = '' }: {
+  dashboards: Dashboard[]; charts: Chart[]; datasets: Dataset[]; canEdit: boolean; done: (message: string) => void; initialId?: string
+}) {
   const [id, setId] = useState(initialId)
+  const [exporting, setExporting] = useState(false)
+  const exportRoot = useRef<HTMLDivElement>(null)
   const [name, setName] = useState('')
+  const [dashboardName, setDashboardName] = useState('')
   const [detail, setDetail] = useState<DashboardDetail | null>(null)
   const [chartId, setChartId] = useState('')
-  const [filter, setFilter] = useState('')
-  const [filterDimension, setFilterDimension] = useState('')
+  const appliedFilters = useRef<DashboardFilter[]>([])
+  const [refreshedAt, setRefreshedAt] = useState('')
+  const [drill, setDrill] = useState<{ chart: ChartData; index?: number } | null>(null)
   const [status, setStatus] = useState('')
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-  useEffect(() => { if (!id && dashboards.length) setId(dashboards[0].id) }, [dashboards, id])
-  useEffect(() => { if (!id) { setDetail(null); return }; load(id, filter).catch(e => setStatus(message(e))) }, [id])
-  async function load(value = id, filterValue = filter) { setDetail(await api(`/dashboards/${value}?filter=${encodeURIComponent(filterValue)}&filterDimension=${encodeURIComponent(filterDimension)}`)); setStatus('') }
-  async function create() { try { const result = await api<{ id: string }>('/dashboards', 'POST', { name }); setName(''); setId(result.id); done('Đã tạo dashboard.') } catch (e) { setStatus(message(e)) } }
-  async function layout(ids: string[]) { if (!id) return; try { await api(`/dashboards/${id}/layout`, 'PUT', { chartIds: ids }); await load(); done('Đã lưu bố cục dashboard.') } catch (e) { setStatus(message(e)) } }
-  async function share() { if (!id) return; try { await api(`/dashboards/${id}/share`, 'POST'); await load(); done('Đã bật chia sẻ bằng liên kết.') } catch (e) { setStatus(message(e)) } }
-  async function unshare() { if (!id) return; try { await api(`/dashboards/${id}/share`, 'DELETE'); await load(); done('Đã tắt liên kết chia sẻ.') } catch (e) { setStatus(message(e)) } }
-  async function remove() { if (!id || !detail || !window.confirm(`Xóa dashboard “${detail.name}”?`)) return; try { await api(`/dashboards/${id}`, 'DELETE'); setId(''); setDetail(null); done('Đã xóa dashboard.') } catch (e) { setStatus(message(e)) } }
-  function drop(index: number) { if (dragIndex === null || !detail || dragIndex === index) return; const ids = detail.charts.map(c => c.id!); const moved = ids.splice(dragIndex, 1)[0]; ids.splice(index, 0, moved); setDragIndex(null); layout(ids) }
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [editingLayout, setEditingLayout] = useState(false)
+  const [draft, setDraft] = useState<GridItem[]>([])
+  const [editSpec, setEditSpec] = useState<ChartDefinition | null>(null)
+  const [editBusy, setEditBusy] = useState(false)
+  const [deletedIds, setDeletedIds] = useState<string[]>([])
+  const sequence = useRef(0)
+  const selected = useRef(id)
+  selected.current = id
+  const availableDashboards = dashboards.filter(d => !deletedIds.includes(d.id))
+  const dirty = detail && JSON.stringify(ordered(draft)) !== JSON.stringify(ordered(readLayout(detail.charts)))
+  useEffect(() => { if (!id && availableDashboards.length) setId(availableDashboards[0].id) }, [id, dashboards, deletedIds])
+  useEffect(() => {
+    let active = true
+    setDetail(null); setStatus(''); appliedFilters.current = []; setRefreshedAt(''); setDrill(null); setEditingLayout(false)
+    if (id) load(id).catch(e => { if (active) setStatus(message(e)) })
+    return () => { active = false; sequence.current++ }
+  }, [id])
+  async function load(value = id, filters = appliedFilters.current) {
+    const token = ++sequence.current
+    setLoading(true)
+    try {
+      const result = await api<DashboardDetail & { refreshedAt: string }>(`/dashboards/${value}/query`, 'POST', { filters })
+      if (token === sequence.current && value === selected.current) {
+        appliedFilters.current = filters; setRefreshedAt(result.refreshedAt); setDetail(result); setDashboardName(result.name); setDraft(readLayout(result.charts))
+      }
+    } finally { if (token === sequence.current) setLoading(false) }
+  }
+  async function mutate(action: () => Promise<void>) {
+    if (!canEdit || busy) return
+    setBusy(true); setStatus('')
+    try { await action() } catch (e) { setStatus(message(e)) } finally { setBusy(false) }
+  }
+  function choose(value: string) {
+    if (editingLayout && dirty && !window.confirm('Bỏ các thay đổi bố cục chưa lưu?')) return
+    setEditingLayout(false); setId(value)
+  }
+  async function create() {
+    await mutate(async () => { const result = await api<{ id: string }>('/dashboards', 'POST', { name }); setName(''); setId(result.id); done('Đã tạo dashboard.') })
+  }
+  async function persist(items: GridItem[]) {
+    await api(`/dashboards/${id}/layout`, 'PUT', { items: ordered(items) })
+    const scopes = await api<{ datasets: { id: string }[] }>(`/dashboards/${id}/filters`)
+    await load(id, appliedFilters.current.filter(f => scopes.datasets.some(s => s.id === f.datasetId))); setEditingLayout(false); done('Đã lưu bố cục dashboard.')
+  }
+  async function add() {
+    if (!detail || !chartId) return
+    await mutate(async () => { await persist(appendItem(readLayout(detail.charts), chartId)); setChartId('') })
+  }
+  async function removeChart(value: string) {
+    if (!detail) return
+    await mutate(async () => persist(readLayout(detail.charts).filter(i => i.chartId !== value)))
+  }
+  async function rename() {
+    await mutate(async () => { await api(`/dashboards/${id}`, 'PUT', { name: dashboardName }); await load(); done('Đã đổi tên dashboard.') })
+  }
+  async function share() {
+    await mutate(async () => { await api(`/dashboards/${id}/share`, detail?.share_token ? 'DELETE' : 'POST'); await load(); done(detail?.share_token ? 'Đã tắt chia sẻ.' : 'Đã bật chia sẻ.') })
+  }
+  async function remove() {
+    if (!detail || !window.confirm(`Xóa dashboard “${detail.name}”?`)) return
+    await mutate(async () => {
+      await api(`/dashboards/${id}`, 'DELETE'); setDeletedIds(items => [...items, id]); setDetail(null)
+      setId(availableDashboards.find(d => d.id !== id)?.id || ''); done('Đã xóa dashboard.')
+    })
+  }
+  async function editChart(value: string) {
+    await mutate(async () => { setEditSpec(await api<ChartDefinition>(`/charts/${value}`)) })
+  }
+  const locked = busy || loading || editingLayout
   const url = detail?.share_token ? `${window.location.origin}/?share=${detail.share_token}` : ''
-  return <div className="stack"><DashboardTemplateForm datasets={datasets} canEdit={canEdit} created={value => { setFilter(''); setFilterDimension(''); setId(value); done('Đã tạo dashboard từ mẫu.') }} /><div className="two-column dashboard-toolbar"><section className="surface"><SectionTitle label="Dashboard" count={dashboards.length} /><div className="inline-form"><label>Chọn dashboard<select value={id} onChange={e => { setId(e.target.value); setFilter(''); setFilterDimension('') }}><option value="">Chọn dashboard</option>{dashboards.map(d => <option value={d.id} key={d.id}>{d.name}</option>)}</select></label><label>Tạo mới<input value={name} onChange={e => setName(e.target.value)} placeholder="Tên dashboard" /></label><button className="primary-button" disabled={!name.trim()} onClick={create}>Tạo</button></div></section>
-    <section className="surface"><SectionTitle label="Bố cục & lọc" /><div className="inline-form"><label>Thêm biểu đồ<select value={chartId} onChange={e => setChartId(e.target.value)}><option value="">Chọn biểu đồ</option>{charts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><button className="secondary-button" disabled={!id || !chartId} onClick={() => layout([...(detail?.charts.map(c => c.id!) || []),chartId])}>Thêm</button><label>Chiều lọc<select value={filterDimension} onChange={e => setFilterDimension(e.target.value)}><option value="">Chọn chiều dữ liệu</option>{[...new Set(detail?.charts.map(c => c.dimension) || [])].map(d => <option key={d} value={d}>{d}</option>)}</select></label><label>Giá trị<input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Ví dụ: Miền Bắc" /></label><button className="secondary-button" disabled={!id || (!!filter && !filterDimension)} onClick={() => load().catch(e => setStatus(message(e)))}>Áp dụng</button></div><p className="hint">Chỉ biểu đồ có cùng chiều dữ liệu bị lọc; các biểu đồ khác giữ nguyên.</p></section></div>
-    {status && <div className="notice">{status}</div>}{detail ? <><section className="dashboard-header"><div><span className="eyebrow">DASHBOARD / {String(detail.charts.length).padStart(2,'0')} BIỂU ĐỒ</span><h2>{detail.name}</h2><p>Kéo thả các biểu đồ để đổi thứ tự. Bố cục được lưu ngay.</p></div><div className="actions"><button className="secondary-button" onClick={detail.share_token ? unshare : share}>{detail.share_token ? 'Tắt chia sẻ' : 'Bật chia sẻ'}</button><button className="danger-link" onClick={remove}>Xóa dashboard</button></div></section>
-      {detail.share_token && <section className="surface share-panel"><SectionTitle label="Liên kết công khai & nhúng" /><p className="muted">Bất kỳ ai có liên kết đều xem được dashboard. Chỉ dùng dữ liệu mẫu, không dùng cho dữ liệu nhạy cảm.</p><div className="share-field"><input readOnly value={url} aria-label="Liên kết dashboard" /><button className="secondary-button" onClick={() => navigator.clipboard.writeText(url).then(() => setStatus('Đã sao chép liên kết.')).catch(e => setStatus(message(e)))}>Sao chép</button><a className="secondary-button" href={url} target="_blank" rel="noreferrer">Mở bản xem ↗</a></div><label>Mã nhúng<textarea className="code-input" readOnly rows={2} value={`<iframe src="${url}" width="100%" height="640" title="${detail.name}"></iframe>`} /></label></section>}
-      <div className="dashboard-grid">{detail.charts.map((chart,index) => <article className="surface dashboard-chart" key={chart.id} draggable onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} onDragOver={e => e.preventDefault()} onDrop={() => drop(index)}><div className="chart-head"><div><span className="eyebrow">{chart.chartType.toUpperCase()} / {chart.aggregate.toUpperCase()}</span><h3>{chart.name}</h3></div><button className="danger-link" onClick={() => layout(detail.charts.filter(c => c.id !== chart.id).map(c => c.id!))}>Bỏ</button></div><ChartCanvas data={chart} /><span className="drag-hint">↕ Kéo để sắp xếp</span></article>)}</div>{!detail.charts.length && <section className="surface"><Empty title="Dashboard chưa có biểu đồ" text="Chọn biểu đồ phía trên để thêm vào bản trình bày." /></section>}</> : <section className="surface"><Empty title="Chưa chọn dashboard" text="Tạo dashboard rồi thêm các biểu đồ đã lưu." /></section>}</div>
+  return <><div className="stack" inert={exporting}>
+    <DashboardTemplateForm datasets={datasets} canEdit={canEdit && !locked} created={value => { setEditingLayout(false); setId(value); done('Đã tạo dashboard từ mẫu.') }} />
+    <div className="two-column dashboard-toolbar">
+      <section className="surface"><SectionTitle label="Dashboard" count={availableDashboards.length} /><div className="inline-form">
+        <label>Chọn dashboard<select value={id} disabled={busy} onChange={e => choose(e.target.value)}><option value="">Chọn dashboard</option>{id && !availableDashboards.some(d => d.id === id) && <option value={id}>{detail?.name || 'Dashboard mới'}</option>}{availableDashboards.map(d => <option value={d.id} key={d.id}>{d.name}</option>)}</select></label>
+        <label>Tạo mới<input value={name} maxLength={200} disabled={!canEdit || locked} onChange={e => setName(e.target.value)} placeholder="Tên dashboard" /></label><button className="primary-button" disabled={!canEdit || locked || !name.trim()} onClick={create}>Tạo</button>
+      </div></section>
+      <section className="surface"><SectionTitle label="Biểu đồ & lọc" /><div className="inline-form">
+        <label>Thêm biểu đồ<select value={chartId} disabled={!canEdit || locked} onChange={e => setChartId(e.target.value)}><option value="">Chọn biểu đồ</option>{charts.filter(c => !detail?.charts.some(d => d.id === c.id)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <button className="secondary-button" disabled={!canEdit || locked || !detail || !chartId || detail.charts.length >= 24} onClick={add}>Thêm</button>
+      </div></section>
+    </div>
+    {id && <DashboardFilters key={id + [...new Set(detail?.charts.map(c => c.datasetId) || [])].sort().join()} initialFilters={appliedFilters.current} id={id} disabled={locked || !detail} refreshedAt={refreshedAt} onApply={filters => load(id, filters)} onRefresh={() => load()} />}
+    {status && <div className="form-error" role="status">{status}</div>}
+    {loading && <p role="status">Đang tải dashboard…</p>}
+    {detail ? <>
+      <DashboardExport key={id} dashboard={detail} filters={appliedFilters.current} datasets={datasets} refreshedAt={refreshedAt} root={exportRoot} disabled={locked} onBusyChange={setExporting} />
+      {canEdit && <section className="surface"><form className="dashboard-rename-form" onSubmit={e => { e.preventDefault(); rename() }}><label>Tên dashboard<input maxLength={200} value={dashboardName} disabled={locked} onChange={e => setDashboardName(e.target.value)} required /></label><button className="secondary-button" disabled={locked || !dashboardName.trim() || dashboardName.trim() === detail.name}>Lưu tên</button></form>
+        <div className="dashboard-layout-actions actions">{editingLayout ? <><button className="primary-button" disabled={busy || !dirty} onClick={() => mutate(() => persist(draft))}>Lưu bố cục</button><button className="secondary-button" disabled={busy} onClick={() => { setDraft(readLayout(detail.charts)); setEditingLayout(false); setStatus('') }}>Hủy bố cục</button><p>{dirty ? 'Có thay đổi chưa lưu.' : 'Chưa có thay đổi.'}</p></> : <button className="secondary-button" disabled={locked || !detail.charts.length} onClick={() => { setDraft(readLayout(detail.charts)); setEditingLayout(true); setStatus('') }}>Chỉnh bố cục</button>}</div>
+      </section>}
+      {detail.share_token && <section className="surface share-panel"><SectionTitle label="Liên kết công khai & nhúng" /><p className="muted">Người có liên kết có thể xem dashboard. Bố cục chia sẻ dùng cấu hình đã lưu.</p><div className="share-field"><input readOnly value={url} aria-label="Liên kết dashboard" /><button className="secondary-button" onClick={() => navigator.clipboard.writeText(url).catch(e => setStatus(message(e)))}>Sao chép</button><a className="secondary-button" href={url} target="_blank" rel="noreferrer">Mở bản xem ↗</a></div><label>Mã nhúng<textarea className="code-input" readOnly rows={2} value={`<iframe src="${url}" width="100%" height="640" title="${detail.name}"></iframe>`} /></label></section>}
+      <div className="stack dashboard-export-surface" ref={exportRoot}>
+      <section className="dashboard-header"><div><span className="eyebrow">DASHBOARD / {String(detail.charts.length).padStart(2, '0')} BIỂU ĐỒ</span><h2>{detail.name}</h2><p>Vị trí và kích thước được lưu riêng theo từng dashboard.</p></div>
+        {canEdit && <div className="actions" data-export-exclude><button className="secondary-button" disabled={locked} onClick={share}>{detail.share_token ? 'Tắt chia sẻ' : 'Bật chia sẻ'}</button><button className="danger-link" disabled={locked} onClick={remove}>Xóa dashboard</button></div>}
+      </section>
+      <ExportContext filters={appliedFilters.current} datasets={datasets} refreshedAt={refreshedAt} />
+      {detail.charts.length ? <DashboardGrid charts={detail.charts} items={editingLayout ? draft : undefined} editing={editingLayout && !busy} onChange={setDraft} onError={setStatus}
+        onDrill={!locked ? (chart, index) => setDrill({ chart, index }) : undefined}
+        onEditChart={canEdit && !busy ? editChart : undefined} onRemove={canEdit && !busy ? removeChart : undefined} /> : <section className="surface"><Empty title="Dashboard chưa có biểu đồ" text="Chọn biểu đồ đã lưu để thêm vào dashboard." /></section>}
+      </div>
+    </> : !loading && <section className="surface"><Empty title="Chưa chọn dashboard" text="Chọn hoặc tạo dashboard để bắt đầu." /></section>}
+    {drill && <DashboardDrill id={id} chart={drill.chart} initialIndex={drill.index} filters={appliedFilters.current} onClose={() => setDrill(null)} />}
+    {editSpec && <ChartEditDialog spec={editSpec} datasets={datasets} dashboardId={id} busy={editBusy} onBusyChange={setEditBusy} onCancel={() => setEditSpec(null)} onSaved={async copied => {
+      await load(); setEditSpec(null); done(copied ? 'Đã lưu bản biểu đồ riêng cho dashboard này; các dashboard khác giữ nguyên.' : 'Đã lưu thay đổi biểu đồ.')
+    }} />}
+  </div>{exporting && <div className="dashboard-export-progress" role="status">Đang tạo file xuất… Vui lòng chờ.</div>}</>
+}
+
+function ChartEditDialog({ spec, datasets, dashboardId, busy, onBusyChange, onCancel, onSaved }: {
+  spec: ChartDefinition; datasets: Dataset[]; dashboardId: string; busy: boolean; onBusyChange: (busy: boolean) => void; onCancel: () => void; onSaved: (copied: boolean) => Promise<void>
+}) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => { const node = dialog.current; node?.showModal(); return () => node?.close() }, [])
+  return <dialog className="dashboard-chart-dialog" ref={dialog} aria-labelledby="chart-edit-title" onCancel={e => { e.preventDefault(); if (!busy) onCancel() }}>
+    <h2 id="chart-edit-title">Chỉnh sửa biểu đồ</h2><p className="muted">Thay đổi tiêu đề, loại và các cột cấu hình. Nếu biểu đồ được dùng ở dashboard khác, hệ thống tạo bản riêng cho dashboard này khi lưu.</p>
+    <ChartsPage datasets={datasets} charts={[]} canEdit done={() => {}} editSpec={spec} dashboardId={dashboardId} onSaved={onSaved} onCancel={onCancel} onBusyChange={onBusyChange} />
+  </dialog>
 }
 
 export function PublicDashboard({ token }: { token: string }) {
   const [detail, setDetail] = useState<DashboardDetail | null>(null)
   const [error, setError] = useState('')
-  useEffect(() => { api<DashboardDetail>(`/share/${token}`).then(setDetail).catch(e => setError(message(e))) }, [token])
-  return <main className="public-page"><div className="public-brand"><span className="brand-mark">P</span><strong>Pythera <small>Data Studio</small></strong><span className="tag">BẢN CHIA SẺ</span></div>{error ? <div className="surface"><Empty title="Không mở được dashboard" text={error} /></div> : detail ? <><header className="public-heading"><span className="eyebrow">DASHBOARD / BẢN XEM</span><h1>{detail.name}</h1><p>{detail.charts.length} biểu đồ · Dữ liệu được đọc từ nguồn khi mở trang.</p></header><div className="dashboard-grid">{detail.charts.map(chart => <article className="surface dashboard-chart" key={chart.id}><div className="chart-head"><div><span className="eyebrow">{chart.chartType.toUpperCase()}</span><h3>{chart.name}</h3></div></div><ChartCanvas data={chart} /></article>)}</div></> : <p>Đang tải dashboard…</p>}</main>
+  useEffect(() => { let active = true; api<DashboardDetail>(`/share/${token}`).then(value => { if (active) setDetail(value) }).catch(e => { if (active) setError(message(e)) }); return () => { active = false } }, [token])
+  return <main className="public-page"><div className="public-brand"><span className="brand-mark">P</span><strong>Pythera <small>Data Studio</small></strong><span className="tag">BẢN CHIA SẺ</span></div>
+    {error ? <div className="surface"><Empty title="Không mở được dashboard" text={error} /></div> : detail ? <><header className="public-heading"><span className="eyebrow">DASHBOARD / BẢN XEM</span><h1>{detail.name}</h1><p>{detail.charts.length} biểu đồ · Dùng bố cục đã lưu, tự xếp một cột trên màn hình nhỏ.</p></header><DashboardGrid charts={detail.charts} /></> : <p>Đang tải dashboard…</p>}
+  </main>
 }
