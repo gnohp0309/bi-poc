@@ -20,6 +20,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: Demo2026!
           POSTGRES_DB: bi_poc_app
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         ports:
           - 5433:5432
         options: >-
@@ -100,6 +101,8 @@ jobs:
         shell: pwsh
         run: ./dev/smoke-analysis.ps1
       - name: Start real FastAPI with a deterministic test provider
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           nohup python dev/chat-test-ai.py --port 8000 > /tmp/bi-poc-ai.log 2>&1 &
           for attempt in $(seq 1 30); do
@@ -109,6 +112,8 @@ jobs:
           cat /tmp/bi-poc-ai.log
           exit 1
       - name: Check integrated chat and transaction rollback
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python dev/smoke-chat.py --db-name bi_poc_app
       - name: Backend log on failure
         if: failure()
