@@ -6,18 +6,27 @@ import { GRID_GAP, GRID_ROW_HEIGHT, ordered, placeItem, readLayout } from './das
 import type { GridItem } from './dashboard-layout'
 import './dashboard-editor.css'
 
-export function DashboardGrid({ charts, items, editing = false, onChange, onError, onEditChart, onRemove, onDrill }: {
+export function DashboardGrid({ charts, items, editing = false, compactBelow, onChange, onError, onEditChart, onRemove, onDrill }: {
   onDrill?: (chart: ChartData, index?: number) => void; charts: ChartData[]; items?: GridItem[]; editing?: boolean; onChange?: (items: GridItem[]) => void
   onError?: (message: string) => void; onEditChart?: (id: string) => void; onRemove?: (id: string) => void
+  compactBelow?: number
 }) {
   const grid = useRef<HTMLDivElement>(null)
   const gesture = useRef<{ mode: 'move' | 'resize'; startX: number; startY: number; item: GridItem; items: GridItem[]; columnStep: number } | null>(null)
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width:700px)').matches)
   useEffect(() => {
     const media = window.matchMedia('(max-width:700px)')
-    const listener = () => setCompact(media.matches)
-    media.addEventListener('change', listener); return () => media.removeEventListener('change', listener)
-  }, [])
+    const node = grid.current
+    const update = () => setCompact(media.matches || (compactBelow !== undefined && !!node && node.clientWidth < compactBelow))
+    const observer = compactBelow !== undefined && node ? new ResizeObserver(update) : null
+    if (node) observer?.observe(node)
+    update()
+    media.addEventListener('change', update)
+    return () => {
+      observer?.disconnect()
+      media.removeEventListener('change', update)
+    }
+  }, [compactBelow])
   const layout = items || readLayout(charts)
   function start(event: PointerEvent<HTMLButtonElement>, item: GridItem, mode: 'move' | 'resize') {
     if (!editing || compact || !grid.current || event.button !== 0) return
@@ -36,7 +45,7 @@ export function DashboardGrid({ charts, items, editing = false, onChange, onErro
   function cancel() { const g = gesture.current; if (g) onChange?.(g.items); stop() }
   return <>
     {editing && <p className="hint">{compact ? 'Màn hình nhỏ hiển thị một cột. Dùng phần Vị trí & kích thước để sửa lưới desktop.' : 'Kéo nút Di chuyển hoặc góc Đổi kích thước. Các ô bị va chạm sẽ được đẩy xuống.'} Bấm Lưu bố cục để ghi thay đổi.</p>}
-    <div className={`dashboard-grid-layout${editing ? ' is-editing' : ''}`} ref={grid}>
+    <div className={`dashboard-grid-layout${editing ? ' is-editing' : ''}${compactBelow !== undefined && compact ? ' is-compact' : ''}`} ref={grid}>
       {ordered(layout).map(item => {
         const chart = charts.find(c => c.id === item.chartId)
         if (!chart) return null
@@ -48,7 +57,7 @@ export function DashboardGrid({ charts, items, editing = false, onChange, onErro
           {editing && <><button className="dashboard-move-handle" disabled={compact} aria-label={`Di chuyển ${chart.name}`} onPointerDown={e => start(e, item, 'move')} onPointerMove={move} onPointerUp={stop} onPointerCancel={cancel} onLostPointerCapture={stop}>↕ Di chuyển</button>
             <PositionForm item={item} onApply={candidate => { try { onChange?.(placeItem(layout, candidate)) } catch (e) { onError?.((e as Error).message) } }} /></>}
           <div className="dashboard-grid-plot"><ChartCanvas data={chart} onPoint={onDrill && !editing ? index => onDrill(chart, index) : undefined} /></div>
-          {onDrill && !editing && <button className="text-link" data-export-exclude onClick={() => onDrill(chart)}>Xem dữ liệu chi tiết</button>}
+          {onDrill && !editing && chart.rows.length > 0 && <button className="text-link" data-export-exclude onClick={() => onDrill(chart)}>Xem dữ liệu chi tiết</button>}
           {editing && <button className="dashboard-resize-handle" disabled={compact} aria-label={`Đổi kích thước ${chart.name}`} onPointerDown={e => start(e, item, 'resize')} onPointerMove={move} onPointerUp={stop} onPointerCancel={cancel} onLostPointerCapture={stop}>↘</button>}
         </article>
       })}

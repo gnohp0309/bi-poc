@@ -14,10 +14,11 @@ export type AnalysisResult = {
   warnings: string[]; conclusion?: string; reason?: string; data?: ResultTable; charts: ChartData[]
   provenance?: { engine?: string; version?: string; sampled?: boolean; sampleSize?: ResultValue; missingPolicy?: string; scope?: string }
 }
-export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; dashboardId?: string; problems: string[] }
+export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; dashboardId?: string; explorationDatasetId?: string; problems: string[] }
 type Obj = Record<string, unknown>
 const object = (v: unknown): v is Obj => v !== null && typeof v === 'object' && !Array.isArray(v)
 const string = (v: unknown): string | undefined => typeof v === 'string' && v.trim() ? v : undefined
+const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
 const value = (v: unknown): ResultValue => typeof v === 'string' && /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/i.test(v) || typeof v === 'number' && Number.isFinite(v) ? v as ResultValue : null
 const strings = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 100) : []
 const member = <T extends string>(v: unknown, values: readonly T[]): v is T => typeof v === 'string' && values.includes(v as T)
@@ -51,7 +52,10 @@ export function parseChatResult(metadataJson: string): ParsedChatResult {
   if (metadataJson.length > 2_000_000) return { problems: ['Kết quả đã lưu quá lớn để hiển thị trong một tin nhắn.'] }
   try { metadata = JSON.parse(metadataJson) } catch { return { problems: ['Không đọc được dữ liệu kết quả đã lưu. Nội dung tin nhắn vẫn được giữ.'] } }
   if (!object(metadata)) return { problems: ['Metadata kết quả không đúng định dạng.'] }
-  if (typeof metadata.dashboard_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(metadata.dashboard_id)) parsed.dashboardId = metadata.dashboard_id
+  if (uuid(metadata.dashboard_id)) parsed.dashboardId = metadata.dashboard_id
+  if (metadata.intent === 'explore' && object(metadata.exploration) && uuid(metadata.exploration.datasetId)) {
+    parsed.explorationDatasetId = metadata.exploration.datasetId
+  }
   if (metadata.data !== undefined) {
     parsed.table = parseResultTable(metadata.data)
     if (!parsed.table) parsed.problems.push('Bảng kết quả không hợp lệ nên chưa thể hiển thị.')

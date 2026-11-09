@@ -14,6 +14,13 @@ test('legacy tables remain readable and have no invented statistical metadata', 
   assert.equal(r.table.rows[1].n, null)
   assert.equal(r.result, undefined)
 })
+test('exploration reports are linked only from saved exploration results with a dataset UUID', () => {
+  const datasetId = '204a35ee-800c-4dc3-8f1f-cf2590eae80d'
+  const exploration = { datasetId }
+  assert.equal(parseChatResult(JSON.stringify({ intent: 'explore', exploration })).explorationDatasetId, datasetId)
+  assert.equal(parseChatResult(JSON.stringify({ intent: 'query', exploration })).explorationDatasetId, undefined)
+  assert.equal(parseChatResult(JSON.stringify({ intent: 'explore', exploration: { datasetId: '../other' } })).explorationDatasetId, undefined)
+})
 test('zero and a missing value stay distinct; small p-values do not round to zero', () => {
   assert.equal(formatResultValue(0), '0')
   assert.equal(formatResultValue(null), '—')

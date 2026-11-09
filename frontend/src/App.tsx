@@ -102,7 +102,7 @@ export default function App() {
         {page === 'sql' && <SqlPage connections={connections} done={done} />}
         {page === 'charts' && <ChartsPage canEdit={actor.role !== 'VIEWER'} datasets={datasets} charts={charts} done={done} />}
         {page === 'dashboards' && <DashboardsPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}
-        {page === 'chat' && <ChatPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
+        {page === 'chat' && <ChatPage datasets={datasets} charts={charts} dashboards={dashboards} canEdit={actor.role !== 'VIEWER'} done={done} />}
         {page === 'security' && <SecurityPage />}
       </main>
     </div>

@@ -2,6 +2,7 @@ import { Component, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ChartCanvas } from './ui'
 import { ChatDashboard } from './chat-dashboard'
+import type { OpenChatDashboard } from './chat-dashboard'
 import { parseChatResult, formatResultValue as fmt } from './chat-result-model'
 import type { AnalysisResult, Measurement, ResultTable } from './chat-result-model'
 import './chat-result.css'
@@ -10,17 +11,23 @@ const stateLabels = { success: 'Đã có kết quả', insufficient_data: 'Khôn
 const assumptionLabels = { passed: 'Đạt', failed: 'Không đạt', not_checked: 'Chưa kiểm tra', not_applicable: 'Không áp dụng' }
 function Text({ content }: { content: string }) { return <div className="message-content">{content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div> }
 
-export function ChatResult({ metadataJson, content, openDashboard }: { metadataJson: string; content: string; openDashboard: (id: string) => void }) {
+export function ChatResult({ metadataJson, content, openDashboard, dashboardVersions, datasetId, onOpenReport }: {
+  metadataJson: string; content: string; openDashboard: OpenChatDashboard; dashboardVersions?: Record<string, number>
+  datasetId?: string; onOpenReport?: (id: string) => void
+}) {
   const parsed = useMemo(() => parseChatResult(metadataJson), [metadataJson])
   const result = parsed.result
+  const reportId = parsed.explorationDatasetId
   return <>
     {result ? <details className="chat-result-original"><summary>Xem câu trả lời dạng văn bản</summary><Text content={content} /></details> : <Text content={content} />}
     {parsed.problems.length > 0 && <div className="chat-result-warning" role="status">{parsed.problems.map((p, i) => <p key={i}>{p}</p>)}</div>}
     <div className="message-meta">
       {result && <AnalysisResultView result={result} />}
       {!result && parsed.table && <ResultTableView table={parsed.table} />}
-      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} />}
+      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} />}
     </div>
+    {reportId && reportId.toLowerCase() === datasetId?.toLowerCase() && onOpenReport &&
+      <button className="secondary-button chat-exploration-button" onClick={() => onOpenReport(reportId)}>Xem báo cáo chi tiết</button>}
   </>
 }
 

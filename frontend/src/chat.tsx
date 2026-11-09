@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
-import type { Dataset, Conversation, ConversationDetail, ChatResponse } from './api'
+import type { Chart, Dashboard, Dataset, Conversation, ConversationDetail, ChatResponse } from './api'
 import { Empty, SectionTitle } from './ui'
 import { ChatResult } from './chat-result'
+import { ChatDashboardPanel } from './chat-dashboard'
+import { ExplorationReportDialog } from './exploration'
 
 type Done = (message: string) => void
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
 
-export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets: Dataset[]; canEdit: boolean; done: Done; openDashboard: (id: string) => void }) {
+export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
+  datasets: Dataset[]; charts: Chart[]; dashboards: Dashboard[]; canEdit: boolean; done: Done
+}) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConv, setSelectedConv] = useState<ConversationDetail | null>(null)
   const [datasetId, setDatasetId] = useState('')
@@ -15,6 +19,24 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [sidebarHidden, setSidebarHidden] = useState(false)
+  const [dashboardId, setDashboardId] = useState<string | null>(null)
+  const [reportDatasetId, setReportDatasetId] = useState<string | null>(null)
+  const [dashboardVersions, setDashboardVersions] = useState<Record<string, number>>({})
+  const dashboardTrigger = useRef<HTMLElement>(null)
+  const leaveDashboard = useRef<(() => boolean) | null>(null)
+
+  function openDashboard(id: string, trigger: HTMLElement) {
+    if (dashboardId === id || leaveDashboard.current?.() === false) return
+    dashboardTrigger.current = trigger
+    setDashboardId(id)
+  }
+
+  function closeDashboard() {
+    if (leaveDashboard.current?.() === false) return
+    setDashboardId(null)
+    const trigger = dashboardTrigger.current
+    requestAnimationFrame(() => { if (trigger?.isConnected) trigger.focus() })
+  }
 
   useEffect(() => {
     if (datasets.length && !datasetId) setDatasetId(datasets[0].id)
@@ -34,7 +56,7 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   }
 
   async function createConversation() {
-    if (!datasetId || !canEdit || busy) return
+    if (!datasetId || !canEdit || busy || leaveDashboard.current?.() === false) return
     try {
       const dataset = datasets.find(d => d.id === datasetId)
       const title = `Chat: ${dataset?.name || 'Dataset'}`
@@ -50,6 +72,7 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   async function openConversation(id: string) {
     try {
       const conv = await api<ConversationDetail>(`/chat/conversations/${id}`)
+      if (selectedConv?.id !== conv.id) setDashboardId(null)
       setSelectedConv(conv)
       setDatasetId(conv.dataset_id)
       setStatus('')
@@ -59,10 +82,14 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   }
 
   async function deleteConversation(id: string) {
+    if (selectedConv?.id === id && leaveDashboard.current?.() === false) return
     if (!confirm('Xóa cuộc hội thoại này?')) return
     try {
       await api(`/chat/conversations/${id}`, 'DELETE')
-      if (selectedConv?.id === id) setSelectedConv(null)
+      if (selectedConv?.id === id) {
+        setSelectedConv(null)
+        setDashboardId(null)
+      }
       await loadConversations()
       done('Đã xóa cuộc hội thoại.')
     } catch (e) {
@@ -117,17 +144,32 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   }
 
   const selectedDataset = datasets.find(d => d.id === datasetId)
+  const showSidebar = !sidebarHidden && !dashboardId
+  const layoutClass = dashboardId ? ' with-dashboard' : sidebarHidden ? ' without-sidebar' : ''
 
   return (
-    <div className={'two-column wide-left chat-layout' + (sidebarHidden ? ' without-sidebar' : '')}>
-      <section className={`surface chat-main ${sidebarHidden ? 'full-width' : ''}`}>
+    <div className={'two-column wide-left chat-layout' + layoutClass}>
+      <section className={`surface chat-main ${sidebarHidden && !dashboardId ? 'full-width' : ''}`}>
         <div className="panel-head">
           <SectionTitle label="Chat AI" />
-          {selectedConv && <button className="text-link" disabled={busy} onClick={() => { setSelectedConv(null); setStatus('') }}>Hội thoại mới</button>}
-          <button className="text-link" onClick={() => setSidebarHidden(!sidebarHidden)}>
+          {selectedConv && <button className="text-link" disabled={busy} onClick={() => {
+            if (leaveDashboard.current?.() === false) return
+            setSelectedConv(null); setDashboardId(null); setStatus('')
+          }}>Hội thoại mới</button>}
+          {!dashboardId && <button className="text-link" onClick={() => setSidebarHidden(!sidebarHidden)}>
             {sidebarHidden ? '☰ Hiện danh sách' : '⇄ Ẩn danh sách'}
-          </button>
+          </button>}
         </div>
+        {dashboards.length > 0 && <label className="chat-dashboard-picker">Dashboard đã lưu
+          <select value={dashboardId && dashboards.some(dashboard => dashboard.id === dashboardId) ? dashboardId : ''}
+            onChange={event => {
+              if (event.target.value) openDashboard(event.target.value, event.currentTarget)
+              else closeDashboard()
+            }}>
+            <option value="">Chọn dashboard đã lưu</option>
+            {dashboards.map(dashboard => <option key={dashboard.id} value={dashboard.id}>{dashboard.name}</option>)}
+          </select>
+        </label>}
 
         {!selectedConv ? (
           <div className="chat-empty">
@@ -185,7 +227,10 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
                     <div className="message-header">
                       <small>{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</small>
                     </div>
-                    {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json} openDashboard={openDashboard} /> : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
+                    {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json}
+                      datasetId={selectedConv.dataset_id} onOpenReport={setReportDatasetId}
+                      openDashboard={openDashboard} dashboardVersions={dashboardVersions} />
+                      : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
                   </div>
                 ))
               )}
@@ -218,7 +263,14 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
         {status && <p className="inline-status">{status}</p>}
       </section>
 
-      {!sidebarHidden && (
+      {reportDatasetId && <ExplorationReportDialog datasetId={reportDatasetId} onClose={() => setReportDatasetId(null)} />}
+      {dashboardId && <ChatDashboardPanel key={dashboardId} id={dashboardId} datasets={datasets} charts={charts}
+        canEdit={canEdit} onClose={closeDashboard} leaveGuard={leaveDashboard} done={message => {
+          setDashboardVersions(versions => ({ ...versions, [dashboardId]: (versions[dashboardId] ?? 0) + 1 }))
+          done(message)
+        }} />}
+
+      {showSidebar && (
         <section className="surface chat-conversations-sidebar">
           <div className="panel-head">
             <SectionTitle label="Cuộc hội thoại" count={conversations.length} />
