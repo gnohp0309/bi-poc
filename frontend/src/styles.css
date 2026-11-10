@@ -41,3 +41,5 @@
 .chat-dashboard-panel .dashboard-grid-layout.is-compact .dashboard-grid-tile{grid-column:auto!important;grid-row:auto!important;min-height:360px}
 
 .chart-kpi{min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center}.chart-kpi strong{font-size:clamp(28px,4vw,52px);overflow-wrap:anywhere;max-width:100%}.chart-kpi span{color:#637d6c}.chart-field-note{font-size:11px;color:#6c8073;margin:4px 0 14px}
+
+.chat-dashboard-panel.is-expanded{grid-column:1 / -1;position:relative;max-height:none;overflow:visible}.chat-layout.with-dashboard:has(.is-expanded){grid-template-columns:minmax(0,1fr)}

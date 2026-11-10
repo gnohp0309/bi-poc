@@ -15,7 +15,7 @@ import { DashboardExport, ExportContext } from './dashboard-export'
 import './dashboard-export.css'
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
-type ChatPanelControls = { onClose: () => void; leaveGuard: RefObject<(() => boolean) | null> }
+type ChatPanelControls = { onClose: () => void; onDeleted: () => void; leaveGuard: RefObject<(() => boolean) | null> }
 
 export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, initialId = '', panel }: {
   dashboards: Dashboard[]; charts: Chart[]; datasets: Dataset[]; canEdit: boolean; done: (message: string) => void; initialId?: string
@@ -37,6 +37,7 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
   const [editingLayout, setEditingLayout] = useState(false)
   const [draft, setDraft] = useState<GridItem[]>([])
   const [editSpec, setEditSpec] = useState<ChartDefinition | null>(null)
+  const [creatingChart, setCreatingChart] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
   const [refreshSeconds, setRefreshSeconds] = useState(0)
   const [autoRefreshError, setAutoRefreshError] = useState('')
@@ -48,13 +49,17 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
   const availableDashboards = dashboards.filter(d => !deletedIds.includes(d.id))
   const dirty = detail && JSON.stringify(ordered(draft)) !== JSON.stringify(ordered(readLayout(detail.charts)))
   const leaveGuard = panel?.leaveGuard
+  const unsaved = !!(editingLayout && dirty || editSpec || creatingChart || detail && dashboardName !== detail.name)
   useEffect(() => { closeButton.current?.focus() }, [])
   useEffect(() => {
-    if (!leaveGuard) return
-    leaveGuard.current = () => !busy && !editBusy && !exporting
-      && (!editingLayout || !dirty || window.confirm('Bỏ các thay đổi bố cục chưa lưu?'))
-    return () => { leaveGuard.current = null }
-  }, [leaveGuard, busy, editBusy, exporting, editingLayout, dirty])
+    const canLeave = () => !busy && !editBusy && !exporting && (!unsaved || window.confirm('Bỏ các thay đổi chưa lưu?'))
+    if (leaveGuard) leaveGuard.current = canLeave
+    const navigate = (event: Event) => { if (!canLeave()) event.preventDefault() }
+    const unload = (event: BeforeUnloadEvent) => { if (unsaved || busy || editBusy || exporting) { event.preventDefault(); event.returnValue = '' } }
+    window.addEventListener('bi-poc-before-navigate', navigate)
+    window.addEventListener('beforeunload', unload)
+    return () => { if (leaveGuard) leaveGuard.current = null; window.removeEventListener('bi-poc-before-navigate', navigate); window.removeEventListener('beforeunload', unload) }
+  }, [leaveGuard, busy, editBusy, exporting, unsaved])
   useEffect(() => { if (!id && availableDashboards.length) setId(availableDashboards[0].id) }, [id, dashboards, deletedIds])
   const load = useCallback(async (value = id, filters = appliedFilters.current, automatic = false) => {
     const token = ++sequence.current
@@ -112,13 +117,14 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
     await mutate(async () => {
       await api(`/dashboards/${id}`, 'DELETE'); setDeletedIds(items => [...items, id]); setDetail(null)
       setId(availableDashboards.find(d => d.id !== id)?.id || ''); done('Đã xóa dashboard.')
+      panel?.onDeleted()
     })
   }
   async function editChart(value: string) {
     await mutate(async () => { setEditSpec(await api<ChartDefinition>(`/charts/${value}`)) })
   }
   const locked = busy || loading || editingLayout || editBusy
-  const refreshPaused = locked || exporting || !!drill || !!editSpec || dashboardName !== detail?.name
+  const refreshPaused = locked || exporting || !!drill || !!editSpec || creatingChart || dashboardName !== detail?.name
   const autoRefreshEnabled = !!panel && !!detail && refreshSeconds > 0 && !refreshPaused
   useEffect(() => {
     if (!autoRefreshEnabled) return
@@ -133,7 +139,9 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
     <div className="inline-form">
       <label>Thêm biểu đồ<select value={chartId} disabled={!canEdit || locked} onChange={e => setChartId(e.target.value)}><option value="">Chọn biểu đồ</option>{charts.filter(c => !detail?.charts.some(d => d.id === c.id)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <button className="secondary-button" disabled={!canEdit || locked || !detail || !chartId || detail.charts.length >= 24} onClick={add}>Thêm</button>
+      {panel && <button className="secondary-button" disabled={!canEdit || locked || !detail || detail.charts.length >= 24} onClick={() => setCreatingChart(value => !value)}>{creatingChart ? 'Đóng tạo biểu đồ' : 'Tạo biểu đồ mới trong Chat'}</button>}
     </div>
+    {creatingChart && detail && <ChartsPage datasets={detail.scopeFilters?.length ? datasets.filter(d => detail.scopeFilters?.some(f => f.datasetId === d.id)) : datasets} charts={[]} dashboardId={id} previewFilters={appliedFilters.current} canEdit={canEdit} done={done} onBusyChange={setEditBusy} onCreated={async chart => { await persist(appendItem(readLayout(detail.charts), chart)); setCreatingChart(false) }} />}
   </section>
   return <>
     {panel && <div className="chat-dashboard-panel-header">
@@ -171,16 +179,17 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
     {panel && status && !detail && !loading && <button className="secondary-button" onClick={() => load().then(() => setStatus('')).catch(e => setStatus(message(e)))}>Tải lại dashboard</button>}
     {loading && <p role="status">Đang tải dashboard…</p>}
     {detail ? <>
-      <DashboardExport key={id} dashboard={detail} filters={appliedFilters.current} datasets={datasets} refreshedAt={refreshedAt} root={exportRoot} disabled={locked} onBusyChange={setExporting} />
+      {detail.scopeFilters?.length ? <section className="notice"><div><strong>Phạm vi đã lưu từ yêu cầu Chat</strong><p>Các bộ lọc bên trên áp dụng thêm trong phạm vi này; mở lại, xuất file và chia sẻ đều giữ phạm vi.</p><ExportContext filters={detail.scopeFilters} datasets={datasets} refreshedAt="" /></div></section> : null}
+      <DashboardExport key={id} dashboard={detail} filters={[...(detail.scopeFilters || []), ...appliedFilters.current]} datasets={datasets} refreshedAt={refreshedAt} root={exportRoot} disabled={locked} onBusyChange={setExporting} />
       {canEdit && <section className="surface"><form className="dashboard-rename-form" onSubmit={e => { e.preventDefault(); rename() }}><label>Tên dashboard<input maxLength={200} value={dashboardName} disabled={locked} onChange={e => setDashboardName(e.target.value)} required /></label><button className="secondary-button" disabled={locked || !dashboardName.trim() || dashboardName.trim() === detail.name}>Lưu tên</button></form>
         <div className="dashboard-layout-actions actions">{editingLayout ? <><button className="primary-button" disabled={busy || !dirty} onClick={() => mutate(() => persist(draft))}>Lưu bố cục</button><button className="secondary-button" disabled={busy} onClick={() => { setDraft(readLayout(detail.charts)); setEditingLayout(false); setStatus('') }}>Hủy bố cục</button><p>{dirty ? 'Có thay đổi chưa lưu.' : 'Chưa có thay đổi.'}</p></> : <button className="secondary-button" disabled={locked || !detail.charts.length} onClick={() => { setDraft(readLayout(detail.charts)); setEditingLayout(true); setStatus('') }}>Chỉnh bố cục</button>}</div>
       </section>}
       {detail.share_token && <section className="surface share-panel"><SectionTitle label="Liên kết công khai & nhúng" /><p className="muted">Người có liên kết có thể xem dashboard. Bố cục chia sẻ dùng cấu hình đã lưu.</p><div className="share-field"><input readOnly value={url} aria-label="Liên kết dashboard" /><button className="secondary-button" onClick={() => navigator.clipboard.writeText(url).catch(e => setStatus(message(e)))}>Sao chép</button><a className="secondary-button" href={url} target="_blank" rel="noreferrer">Mở bản xem ↗</a></div><label>Mã nhúng<textarea className="code-input" readOnly rows={2} value={`<iframe src="${url}" width="100%" height="640" title="${detail.name}"></iframe>`} /></label></section>}
       <div className="stack dashboard-export-surface" ref={exportRoot}>
       <section className="dashboard-header"><div><span className="eyebrow">DASHBOARD / {String(detail.charts.length).padStart(2, '0')} BIỂU ĐỒ</span><h2>{detail.name}</h2><p>Vị trí và kích thước được lưu riêng theo từng dashboard.</p></div>
-        {canEdit && <div className="actions" data-export-exclude><button className="secondary-button" disabled={locked} onClick={share}>{detail.share_token ? 'Tắt chia sẻ' : 'Bật chia sẻ'}</button>{!panel && <button className="danger-link" disabled={locked} onClick={remove}>Xóa dashboard</button>}</div>}
+        {canEdit && <div className="actions" data-export-exclude><button className="secondary-button" disabled={locked} onClick={share}>{detail.share_token ? 'Tắt chia sẻ' : 'Bật chia sẻ'}</button><button className="danger-link" disabled={locked} onClick={remove}>Xóa dashboard</button></div>}
       </section>
-      <ExportContext filters={appliedFilters.current} datasets={datasets} refreshedAt={refreshedAt} />
+      <ExportContext filters={[...(detail.scopeFilters || []), ...appliedFilters.current]} datasets={datasets} refreshedAt={refreshedAt} />
       {detail.charts.length ? <DashboardGrid charts={detail.charts} items={editingLayout ? draft : undefined} editing={editingLayout && !busy} compactBelow={panel ? 480 : undefined} onChange={setDraft} onError={setStatus}
         onDrill={!locked ? (chart, index) => setDrill({ chart, index }) : undefined}
         onEditChart={canEdit && !locked ? editChart : undefined} onRemove={canEdit && !locked ? removeChart : undefined} /> : <section className="surface"><Empty title="Dashboard chưa có biểu đồ" text="Chọn biểu đồ đã lưu để thêm vào dashboard." /></section>}

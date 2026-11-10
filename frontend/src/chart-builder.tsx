@@ -10,9 +10,11 @@ const types: [ChartType, string][] = [
   ['histogram', 'Histogram — phân phối'], ['scatter', 'Scatter — hai biến'], ['heatmap', 'Heatmap — tương quan Pearson'],
   ['map', 'Bản đồ điểm'], ['stacked-bar', 'Cột chồng'], ['stacked-area', 'Miền chồng theo thời gian'],
 ]
-export function ChartsPage({ datasets, charts, done, canEdit = true, editSpec, dashboardId, onSaved, onCancel, onBusyChange }: {
+export function ChartsPage({ datasets, charts, done, canEdit = true, editSpec, dashboardId, onSaved, onCancel, onBusyChange, onCreated, previewFilters = [] }: {
   datasets: Dataset[]; charts: Chart[]; done: (message: string) => void; canEdit?: boolean
   editSpec?: ChartDefinition; dashboardId?: string; onSaved?: (copied: boolean) => void | Promise<void>; onCancel?: () => void; onBusyChange?: (busy: boolean) => void
+  onCreated?: (id: string) => Promise<void>
+  previewFilters?: import('./dashboard-interaction').DashboardFilter[]
 }) {
   const [datasetId, setDatasetId] = useState(editSpec?.datasetId || '')
   const [name, setName] = useState(editSpec?.name || '')
@@ -74,7 +76,7 @@ export function ChartsPage({ datasets, charts, done, canEdit = true, editSpec, d
   async function show() {
     if (!ready || busy) return
     setBusy(true); setStatus('')
-    try { setPreview(await api<ChartData>('/charts/preview', 'POST', spec)) } catch (e) { setStatus((e as Error).message) }
+    try { setPreview(await api<ChartData>(dashboardId ? `/dashboards/${dashboardId}/preview` : '/charts/preview', 'POST', dashboardId ? { chart: spec, filters: previewFilters.filter(f => f.datasetId === datasetId) } : spec)) } catch (e) { setStatus((e as Error).message) }
     finally { setBusy(false) }
   }
   async function save() {
@@ -85,7 +87,9 @@ export function ChartsPage({ datasets, charts, done, canEdit = true, editSpec, d
         const response = await api<{ chartId: string; copied: boolean }>(`/dashboards/${dashboardId}/charts/${editSpec.id}`, 'PUT', spec)
         await onSaved?.(response.copied)
       } else {
-        await api('/charts', 'POST', spec); done('Đã lưu biểu đồ. Có thể thêm vào dashboard.'); setPreview(await api('/charts/preview', 'POST', spec))
+        const created = await api<{ id: string }>('/charts', 'POST', spec)
+        if (onCreated) await onCreated(created.id)
+        else { done('Đã lưu biểu đồ. Có thể thêm vào dashboard.'); setPreview(await api('/charts/preview', 'POST', spec)) }
       }
     }
     catch (e) { setStatus((e as Error).message) } finally { setBusy(false) }

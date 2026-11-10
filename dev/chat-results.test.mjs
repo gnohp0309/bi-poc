@@ -3,6 +3,14 @@ import assert from 'node:assert/strict'
 import { parseChatResult, parseResultTable, formatResultValue } from '../frontend/src/chat-result-model.ts'
 
 const parse = r => parseChatResult(JSON.stringify({ analysis_result: { schemaVersion: 1, kind: 'statistical_test', status: 'success', ...r } }))
+
+test('preflight keeps explicit confirmation state without inventing a p-value', () => {
+  const result = parse({kind:'query',status:'needs_confirmation',summary:'Confirm independence',assumptions:[{name:'Independence',status:'not_checked'}]})
+  assert.deepEqual(result.problems, [])
+  assert.equal(result.result.status,'needs_confirmation')
+  assert.equal(result.result.pValue,undefined)
+  assert.equal(result.result.assumptions[0].status,'not_checked')
+})
 test('malformed history is reported without throwing', () => {
   assert.equal(parseChatResult('{oops').problems.length, 1)
   assert.equal(parseChatResult('null').problems.length, 1)

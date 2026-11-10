@@ -67,6 +67,7 @@ export default function App() {
     sessionStorage.setItem('bi_poc_token', value); setToken(value); setActor(user)
   }
   async function logout() {
+    if (!window.dispatchEvent(new Event('bi-poc-before-navigate', { cancelable: true }))) return
     try { await api('/auth/logout', 'POST') } catch { /* clear local session anyway */ }
     sessionStorage.removeItem('bi_poc_token'); setToken(null); setActor(null)
   }
@@ -80,7 +81,7 @@ export default function App() {
       <div className="brand"><div className="brand-mark">P</div><div><strong>Pythera</strong><span>Data Studio · POC</span></div></div>
       <div className="sidebar-label">KHÔNG GIAN LÀM VIỆC</div>
       <nav aria-label="Điều hướng chính">{nav.filter(item => item.id !== 'security' || actor.role === 'ADMIN').map(item =>
-        <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(item.id); setNotice('') }}>
+        <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => { if (page !== item.id && !window.dispatchEvent(new Event('bi-poc-before-navigate', { cancelable: true }))) return; setPage(item.id); setNotice('') }}>
           <span className="nav-index">{item.number}</span><span>{item.label}</span>
         </button>)}</nav>
       <div className="sidebar-foot"><span className="live-dot" /> Chạy trên máy cục bộ <small>PostgreSQL · Spring Boot</small></div>

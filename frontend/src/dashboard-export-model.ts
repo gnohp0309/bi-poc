@@ -29,14 +29,16 @@ export function cellValue(value: unknown): string | number | boolean | null {
 export type Box = { top: number; bottom: number }
 export function pageSlices(height: number, capacity: number, boxes: Box[]): { top: number; height: number }[] {
   if (!Number.isFinite(height) || !Number.isFinite(capacity) || height <= 0 || capacity < 1) throw new Error('Kích thước trang xuất không hợp lệ.')
+  if (!boxes.length) return [{ top: 0, height }]
+  const ends = boxes.map(box => box.bottom).filter(y => !boxes.some(box => box.top < y && y < box.bottom)).sort((a, b) => a - b)
   const pages = []; let top = 0
   while (top < height) {
     const ideal = Math.min(height, top + capacity)
-    let bottom = ideal
-    if (ideal < height && boxes.some(b => b.top < ideal && b.bottom > ideal)) {
-      const boundaries = boxes.flatMap(b => [b.top, b.bottom]).filter(y => y > top + 1 && y <= ideal && !boxes.some(b => b.top < y && b.bottom > y))
-      if (boundaries.length) bottom = Math.max(...boundaries)
-    }
+    const remaining = ends.filter(y => y > top)
+    // End a page only after a whole chart (or overlapping row). Keep the
+    // heading, gutters, and trailing notes with a chart instead of on their own.
+    let bottom = ideal === height ? height : remaining.filter(y => y <= ideal).at(-1) ?? remaining[0] ?? height
+    if (!remaining.some(y => y > bottom)) bottom = height
     pages.push({ top, height: bottom - top }); top = bottom
     if (pages.length > 100) throw new Error('Dashboard quá dài để xuất PDF. Hãy thu gọn bố cục.')
   }

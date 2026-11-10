@@ -35,4 +35,12 @@ class StatisticsTests {
     assertEquals("\"a\"\"b\"",Statistics.quoted("a\"b"));
     assertThrows(Api.Failure.class,()->validate("{\"operation\":\"paired_ttest\",\"column_before\":\"amount\",\"column_after\":\"amount\"}"));
   }
+  @Test void automaticComparisonPreservesUnconfirmedDesignAndRejectsStringConfirmation()throws Exception {
+    var plan=validate("{\"operation\":\"auto_compare\",\"value_column\":\"amount\",\"group_column\":\"group\"}");
+    assertFalse(plan.parameters().containsKey("independent"));
+    assertThrows(Api.Failure.class,()->validate("{\"operation\":\"auto_compare\",\"value_column\":\"amount\",\"group_column\":\"group\",\"independent\":\"true\"}"));
+  }
+  @Test void insightsCannotTreatNumericOrUnknownColumnAsDate() {
+    for(String name:List.of("amount","secret"))assertThrows(Api.Failure.class,()->validate("{\"operation\":\"insights\",\"columns\":[\"amount\"],\"date_column\":\""+name+"\"}"));
+  }
 }

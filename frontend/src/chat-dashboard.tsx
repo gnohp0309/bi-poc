@@ -49,12 +49,14 @@ export function ChatDashboard({ id, openDashboard, revision = 0 }: { id: string;
   </section>
 }
 
-export function ChatDashboardPanel({ id, datasets, charts, canEdit, done, onClose, leaveGuard }: {
+export function ChatDashboardPanel({ id, datasets, charts, canEdit, done, onClose, onDeleted, leaveGuard }: {
   id: string; datasets: Dataset[]; charts: Chart[]; canEdit: boolean; done: (message: string) => void
-  onClose: () => void; leaveGuard: RefObject<(() => boolean) | null>
+  onClose: () => void; onDeleted: () => void; leaveGuard: RefObject<(() => boolean) | null>
 }) {
-  return <aside className="surface chat-dashboard-panel" aria-labelledby="chat-dashboard-panel-title">
+  const [expanded, setExpanded] = useState(false)
+  return <aside className={'surface chat-dashboard-panel' + (expanded ? ' is-expanded' : '')} aria-labelledby="chat-dashboard-panel-title">
+    <button className="text-link" onClick={() => setExpanded(value => !value)}>{expanded ? 'Thu gọn trong Chat' : 'Mở rộng vùng dashboard'}</button>
     <DashboardsPage dashboards={[]} charts={charts} datasets={datasets} canEdit={canEdit} done={done}
-      initialId={id} panel={{ onClose, leaveGuard }} />
+      initialId={id} panel={{ onClose, onDeleted, leaveGuard }} />
   </aside>
 }

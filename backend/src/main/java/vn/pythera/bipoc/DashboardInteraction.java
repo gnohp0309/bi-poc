@@ -12,6 +12,7 @@ import java.time.LocalDate;
 public class DashboardInteraction {
   private final JdbcTemplate db; private final Charts charts; private final Datasets datasets;
   private final DatasetAnalysis analysis; private final Queries queries;
+  private final com.fasterxml.jackson.databind.ObjectMapper mapper=new com.fasterxml.jackson.databind.ObjectMapper();
   DashboardInteraction(JdbcTemplate db,Charts charts,Datasets datasets,DatasetAnalysis analysis,Queries queries){this.db=db;this.charts=charts;this.datasets=datasets;this.analysis=analysis;this.queries=queries;}
   record Source(String sql,Object[] params) {}
   static String quote(String value){return "\""+value.replace("\"","\"\"")+"\"";}
@@ -62,8 +63,33 @@ public class DashboardInteraction {
     Set<String> ids=new HashSet<>();for(var m:members)ids.add(charts.definition((UUID)m.get("chart_id")).get("datasetId").toString());
     for(var f:filters)if(!ids.contains(Api.text(f,"datasetId")))throw Api.bad("Dataset lọc không thuộc dashboard");
   }
+  @SuppressWarnings("unchecked")
+  public List<Map<String,Object>> savedScope(UUID id) {
+    String json=db.queryForObject("SELECT scope_filters_json FROM dashboards WHERE id=?",String.class,id);
+    try {return mapper.readValue(json,List.class);}catch(java.io.IOException e){throw Api.bad("Phạm vi dashboard không hợp lệ");}
+  }
+  public void saveScope(UUID id,List<Map<String,Object>> scope) {
+    var members=members(id);filters(Map.of("filters",scope));validateScope(scope,members);
+    for(var f:scope)source(Api.uuid(Api.text(f,"datasetId")),scope);
+    try {db.update("UPDATE dashboards SET scope_filters_json=? WHERE id=?",mapper.writeValueAsString(scope),id);}
+    catch(java.io.IOException e){throw Api.bad("Không lưu được phạm vi dashboard");}
+  }
+  List<Map<String,Object>> effectiveFilters(UUID id,Map<String,Object> body) {
+    var all=new ArrayList<>(savedScope(id));all.addAll(filters(body));return all;
+  }
+  @SuppressWarnings("unchecked")
+  public Map<String,Object> preview(UUID id,Map<String,Object> body) {
+    members(id);
+    if(!(body.get("chart") instanceof Map<?,?>))throw Api.bad("Cần cấu hình biểu đồ");
+    var spec=(Map<String,Object>)body.get("chart");UUID datasetId=Api.uuid(Api.text(spec,"datasetId"));
+    var scope=savedScope(id);
+    if(!scope.isEmpty() && scope.stream().noneMatch(f->datasetId.toString().equals(f.get("datasetId"))))throw Api.bad("Biểu đồ không thuộc phạm vi dashboard");
+    var filters=effectiveFilters(id,body);
+    for(var filter:filters)if(!datasetId.toString().equals(Api.text(filter,"datasetId")))throw Api.bad("Bộ lọc không thuộc dataset của biểu đồ");
+    var source=source(datasetId,filters);return charts.preview(spec,null,source.sql(),source.params());
+  }
   public Map<String,Object> query(UUID id,Map<String,Object> body){
-    var members=members(id);var filters=filters(body);validateScope(filters,members);
+    var members=members(id);var filters=effectiveFilters(id,body);validateScope(filters(body),members);
     var rows=new ArrayList<Map<String,Object>>();
     for(var m:members){UUID chartId=(UUID)m.get("chart_id");var spec=charts.definition(chartId);UUID datasetId=Api.uuid(spec.get("datasetId").toString());var source=source(datasetId,filters);
       var chart=new LinkedHashMap<>(charts.preview(spec,null,source.sql(),source.params()));chart.put("id",chartId);chart.put("name",spec.get("name"));chart.put("datasetId",datasetId);
@@ -71,12 +97,12 @@ public class DashboardInteraction {
       int pos=((Number)m.get("position")).intValue();chart.put("position",pos);
       chart.put("x",Objects.requireNonNullElse(m.get("grid_x"),(pos%2)*6));chart.put("y",Objects.requireNonNullElse(m.get("grid_y"),(pos/2)*9));chart.put("w",Objects.requireNonNullElse(m.get("grid_w"),6));chart.put("h",Objects.requireNonNullElse(m.get("grid_h"),9));rows.add(chart);
     }
-    var result=new LinkedHashMap<>(db.queryForMap("SELECT id,name,share_token FROM dashboards WHERE id=?",id));result.put("charts",rows);result.put("refreshedAt",java.time.Instant.now().toString());return result;
+    var result=new LinkedHashMap<>(db.queryForMap("SELECT id,name,share_token FROM dashboards WHERE id=?",id));result.put("charts",rows);result.put("scopeFilters",savedScope(id));result.put("refreshedAt",java.time.Instant.now().toString());return result;
   }
   @SuppressWarnings("unchecked")
   public Map<String,Object> drill(UUID id,UUID chartId,Map<String,Object> body){
     var members=members(id);if(members.stream().noneMatch(m->chartId.equals(m.get("chart_id"))))throw Api.notFound();
-    var filters=filters(body);validateScope(filters,members);var spec=charts.definition(chartId);UUID datasetId=Api.uuid(spec.get("datasetId").toString());var source=source(datasetId,filters);
+    var filters=effectiveFilters(id,body);validateScope(filters,members);var spec=charts.definition(chartId);UUID datasetId=Api.uuid(spec.get("datasetId").toString());var source=source(datasetId,filters);
     var rendered=charts.preview(spec,null,source.sql(),source.params());var rows=(List<Map<String,Object>>)rendered.get("rows");
     var conditions=new ArrayList<String>();var params=new ArrayList<Object>(Arrays.asList(source.params()));
     String type=spec.get("chartType").toString();
@@ -109,6 +135,7 @@ public class DashboardInteraction {
     final DashboardInteraction service;final Auth auth;Controller(DashboardInteraction service,Auth auth){this.service=service;this.auth=auth;}
     @GetMapping("/filters") Map<String,Object> metadata(@PathVariable String id,HttpServletRequest req){auth.actor(req);return service.metadata(Api.uuid(id));}
     @PostMapping("/query") Map<String,Object> query(@PathVariable String id,@RequestBody Map<String,Object> body,HttpServletRequest req){auth.actor(req);return service.query(Api.uuid(id),body);}
+    @PostMapping("/preview") Map<String,Object> preview(@PathVariable String id,@RequestBody Map<String,Object> body,HttpServletRequest req){auth.actor(req);return service.preview(Api.uuid(id),body);}
     @PostMapping("/charts/{chartId}/drill") Map<String,Object> drill(@PathVariable String id,@PathVariable String chartId,@RequestBody Map<String,Object> body,HttpServletRequest req){auth.actor(req);return service.drill(Api.uuid(id),Api.uuid(chartId),body);}
   }
 }

@@ -60,6 +60,7 @@ class HistoryMessage(StrictModel):
     role: Literal["user", "assistant", "system"]
     content: str = Field(max_length=4000)
     query_config: AnalysisConfig | None = None
+    statistics_config: dict | None = None
 
 
 class AnalyzeRequest(StrictModel):
@@ -87,7 +88,7 @@ class ChartSpec(StrictModel):
 
 
 class StatisticsConfig(StrictModel):
-    operation: Literal["descriptive", "correlation", "outlier", "shapiro_wilk", "independent_ttest", "paired_ttest", "anova", "chi_square", "mann_whitney", "kruskal_wallis"]
+    operation: Literal["descriptive", "correlation", "outlier", "shapiro_wilk", "independent_ttest", "paired_ttest", "anova", "chi_square", "mann_whitney", "kruskal_wallis", "auto_compare", "insights"]
     columns: list[str] | None = Field(default=None, min_length=1, max_length=10)
     column: str | None = None
     value_column: str | None = None
@@ -101,6 +102,33 @@ class StatisticsConfig(StrictModel):
     threshold: float | None = Field(default=None,gt=0,le=100)
     alpha: float | None = Field(default=None,ge=.01,le=.1)
     equal_variance: bool | None = None
+    independent: bool | None = None
+    date_column: str | None = None
+
+class DashboardDateFilter(StrictModel):
+    column: str
+    op: Literal["date"]
+    value: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+    @model_validator(mode="after")
+    def valid_range(self):
+        from datetime import date
+        start, end = date.fromisoformat(self.value), date.fromisoformat(self.end)
+        if start > end or end.year > 9998:
+            raise ValueError('Invalid date range')
+        return self
+
+class DashboardValueFilter(StrictModel):
+    column: str
+    op: Literal["eq"]
+    value: str = Field(min_length=1, max_length=1000)
+
+class DashboardNullFilter(StrictModel):
+    column: str
+    op: Literal["null"]
+
+DashboardFilter = DashboardDateFilter | DashboardValueFilter | DashboardNullFilter
 
 class AIPlan(StrictModel):
     intent: Literal["query", "create_dashboard", "clarify", "statistical", "explore"]
@@ -113,6 +141,7 @@ class AIPlan(StrictModel):
     charts: list[ChartSpec] | None = Field(default=None, min_length=2, max_length=4)
     clarification: str | None = Field(default=None, min_length=1, max_length=2000)
     explanation: str | None = None
+    dashboard_filters: list[DashboardFilter] | None = Field(default=None, max_length=12)
 
     @model_validator(mode="after")
     def complete_plan(self):
@@ -147,6 +176,7 @@ class TemplateDecision(StrictModel):
     dashboard_name: str = Field(min_length=1, max_length=120)
     templateId: Literal["sales-overview", "product-analysis", "order-status"]
     mapping: dict[str, str] = Field(min_length=3)
+    dashboard_filters: list[DashboardFilter] | None = Field(default=None, max_length=12)
 
 
 class CustomDecision(StrictModel):
@@ -154,6 +184,7 @@ class CustomDecision(StrictModel):
     useTemplate: Literal[False]
     dashboard_name: str = Field(min_length=1, max_length=120)
     charts: list[ChartSpec] = Field(min_length=2, max_length=4)
+    dashboard_filters: list[DashboardFilter] | None = Field(default=None, max_length=12)
 
 
 class ClarifyDecision(StrictModel):
@@ -192,12 +223,21 @@ Các nhánh bổ sung:
 - explore: câu hỏi số dòng/cột, cấu trúc, kiểu dữ liệu, NULL/thiếu, tỷ lệ thiếu, distinct từng cột, dòng trùng, chất lượng dataset. Trả {"decision":{"intent":"explore"}}; backend chạy profiling thật.
 - statistical: thống kê median/mode/std/variance/quartile/phân phối, tương quan, ngoại lệ, kiểm định. Trả statistics_config (CHỈ cấu hình, KHÔNG statistic/p_value/kết quả).
   descriptive: columns tên cột số; correlation: columns ít nhất 2 cột số, method pearson/spearman.
+  "Phân tích phân phối", "histogram" hoặc "biểu đồ phân phối" của một cột -> descriptive (engine vẽ histogram). Chỉ dùng shapiro_wilk nếu yêu cầu kiểm định phân phối chuẩn / normality / Shapiro một cách rõ ràng.
   outlier: column số, method iqr/zscore, threshold nếu yêu cầu.
   shapiro_wilk: column số; independent_ttest/mann_whitney/anova/kruskal_wallis: value_column số, group_column, group_values nếu chỉ chọn một số nhóm.
   paired_ttest: column_before và column_after cùng đối tượng mỗi dòng. chi_square: column1 và column2 phân loại.
   alpha mặc định .05; independent_ttest dùng Welch equal_variance=false mặc định. Chỉ dùng equal_variance=true khi được yêu cầu có căn cứ.
   Thiếu biến, nhóm hoặc thiết kế ghép cặp chưa rõ thì clarify, không tự khẳng định giả định. Không trả thuộc tính null không cần thiết.
-  Insights/nhận xét tổng quan dữ liệu: dùng explore để backend dựa trên profiling thực tế.
+  auto_compare: người dùng yêu cầu so sánh nhóm nhưng chưa chỉ định phép kiểm định: value_column, group_column, group_values nếu chọn nhóm, alpha.
+  Với MỌI phép kiểm định theo nhóm, nếu câu hỏi nêu tên các nhóm thì BẮT BUỘC đưa đúng các giá trị đó vào group_values, giữ nguyên chữ hoa/thường. Không được dùng toàn bộ nhóm khi chỉ yêu cầu vài nhóm.
+  Ví dụ "doanh thu của hai chi nhánh A và B có khác biệt không?" -> {"operation":"auto_compare","value_column":"c_revenue","group_column":"c_branch","group_values":["A","B"]}. Khi người dùng xác nhận độc lập ở lượt sau, giữ nguyên group_values từ cấu hình trước và thêm independent=true.
+  Engine sẽ kiểm tra missing, Shapiro từng nhóm, Levene, rồi chọn Welch/ANOVA hoặc Mann–Whitney/Kruskal.
+  KHÔNG yêu cầu người dùng tự chọn phép kiểm định. independent=true CHỈ khi người dùng xác nhận các quan sát/nhóm độc lập trong câu hỏi hoặc lịch sử.
+  Khi chưa biết độc lập, vẫn trả auto_compare, bỏ independent; engine trả kết quả kiểm tra sơ bộ và hỏi xác nhận trước khi kiểm định.
+  Nếu người dùng nói ghép cặp thì hỏi cột trước/sau và dùng paired_ttest, không coi là độc lập.
+  insights: nhận xét, xu hướng, bất thường: columns các cột số cần phân tích (tối đa 10), date_column nếu có cột thời gian thích hợp.
+  Tìm ngoại lệ toàn dataset chưa chỉ cột cũng dùng insights với các cột số. Engine tự tính IQR và tổng theo tháng, không bịa lời giải thích.
   Ví dụ: {"decision":{"intent":"statistical","statistics_config":{"operation":"descriptive","columns":["amount"]}}}
 Các nhánh BI hiện có:
 1. query: query_config dùng đúng hợp đồng:
@@ -220,6 +260,9 @@ Các nhánh BI hiện có:
    biểu đồ có ý nghĩa, theo các dạng và trường cấu hình đã mô tả ở trên: {name, chartType, dimension, metric, aggregate: sum/avg/count,
    timeGrain?: month}. SUM/AVG cần cột số; COUNT có thể dùng metric="*".
    timeGrain=month chỉ dùng cột date; thời gian có múi giờ được nhóm theo UTC.
+   dashboard_filters phải giữ TOÀN BỘ phạm vi người dùng yêu cầu: ngày, khu vực, danh mục. Dùng [{column,op:"date",value:"YYYY-MM-DD",end:"YYYY-MM-DD"}] với hai ngày bao gồm; eq cho giá trị phân loại; null cho NULL.
+   Ví dụ tháng 03/2025: value=2025-03-01,end=2025-03-31. Năm 2026: 2026-01-01 đến 2026-12-31. Không bỏ bộ lọc khi dùng template hoặc custom; không có yêu cầu lọc thì [].
+   Thiếu năm hoặc cột lọc không có thì clarify; không tự suy đoán năm.
 3. clarify: thiếu cột, yêu cầu mơ hồ/ngoài khả năng thì đặt câu hỏi làm rõ.
    intent phải là "clarify", không phải "clarification"; clarification là trường chứa câu hỏi.
    Ví dụ: {"decision":{"intent":"clarify","clarification":"Dataset không có cột profit. Bạn muốn dùng cột nào?"}}
@@ -231,8 +274,11 @@ Ví dụ tạo dashboard khi có ngày, doanh thu, khu vực, danh mục:
 "templateId":"sales-overview","mapping":{"date":"c_ngay","revenue":"c_doanh_thu","region":"c_khu_vuc","category":"c_danh_muc"}}}
 Tên cột trong ví dụ chỉ là minh họa; phải chọn tên cột thực tế trong metadata.
 Không tự nêu số doanh thu: backend lấy từ kết quả truy vấn thật.
+QUY TẮC PHẠM VI: Nếu yêu cầu ngoại lệ/bất thường cho toàn dataset, không được tự thu hẹp thành một cột doanh thu.
+Ví dụ "Hãy tìm các giá trị ngoại lệ trong dataset" -> statistical, statistics_config.operation=insights, columns gồm TẤT CẢ cột number nghiệp vụ có trong metadata (loại row_id; tối đa 9 nếu thêm date_column).
+Chỉ dùng operation=outlier khi người dùng chỉ định cột. Nếu quá giới hạn số cột thì clarify để chọn phạm vi; không âm thầm bỏ cột.
 """
-    instructions += "\nQUY TẮC MÃ HÓA: Với nhánh statistical, statistics_config là CHUỖI JSON chứa object cấu hình. Với custom dashboard, charts là CHUỖI JSON chứa mảng cấu hình. Không trả object/mảng trực tiếp ở hai trường này. Backend giải mã và kiểm tra kiểu đầy đủ. Các trường khác giữ nguyên.\n"
+    instructions += "\nQUY TẮC MÃ HÓA: statistics_config là CHUỖI JSON chứa object cấu hình. charts và dashboard_filters là CHUỖI JSON chứa mảng cấu hình. Không trả object/mảng trực tiếp ở ba trường này. Một bộ lọc date phải có column,op,value,end trong CÙNG một object, cả value và end là ngày YYYY-MM-DD ngắn gọn. Backend giải mã và kiểm tra kiểu đầy đủ. Các trường khác giữ nguyên.\n"
     return instructions + "\nINPUT_JSON:\n" + request.model_dump_json(exclude_none=True)
 
 
@@ -242,6 +288,9 @@ def provider_schema() -> dict:
     definitions=schema["$defs"]
     definitions["CustomDecision"]["properties"]["charts"]={"type":"string","description":"JSON array of 2 to 4 chart configurations"}
     definitions["StatisticalDecision"]["properties"]["statistics_config"]={"type":"string","description":"JSON object with operation and applicable parameters"}
+    for name in ("TemplateDecision", "CustomDecision"):
+        definitions[name]["properties"]["dashboard_filters"]={"type":"string","description":"JSON array of filters. Each date filter is {column,op:date,value:YYYY-MM-DD,end:YYYY-MM-DD}. Empty array if unfiltered."}
+        definitions[name].setdefault("required",[]).append("dashboard_filters")
     reachable=set()
     def visit(value):
         if isinstance(value,dict):
@@ -282,7 +331,7 @@ def generate_plan(request: AnalyzeRequest) -> AIPlan:
         # Some provider responses use the field name as the clarification intent.
         # This alias cannot execute queries; all fields still pass strict validation.
         if decision.get("intent")=="clarification":decision["intent"]="clarify"
-        for field in ("charts","statistics_config"):
+        for field in ("charts","statistics_config","dashboard_filters"):
             if isinstance(decision.get(field),str):decision[field]=json.loads(decision[field])
     generated = GeneratedPlan.model_validate(decoded)
     return AIPlan.model_validate(generated.decision.model_dump(exclude_none=True))

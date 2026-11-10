@@ -70,6 +70,7 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
   }
 
   async function openConversation(id: string) {
+    if (selectedConv?.id !== id && leaveDashboard.current?.() === false) return
     try {
       const conv = await api<ConversationDetail>(`/chat/conversations/${id}`)
       if (selectedConv?.id !== conv.id) setDashboardId(null)
@@ -160,6 +161,10 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
             {sidebarHidden ? '☰ Hiện danh sách' : '⇄ Ẩn danh sách'}
           </button>}
         </div>
+        <div className="actions">
+          <button className="secondary-button" disabled={!datasetId || busy} onClick={() => setReportDatasetId(datasetId)}>Khám phá dataset trong Chat</button>
+          {!canEdit && <span className="hint">Bạn có thể xem báo cáo và dashboard; gửi yêu cầu AI cần quyền phân tích.</span>}
+        </div>
         {dashboards.length > 0 && <label className="chat-dashboard-picker">Dashboard đã lưu
           <select value={dashboardId && dashboards.some(dashboard => dashboard.id === dashboardId) ? dashboardId : ''}
             onChange={event => {
@@ -219,7 +224,8 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
               {selectedConv.messages.length === 0 ? (
                 <div className="chat-welcome">
                   <p>Xin chào! Tôi có thể giúp bạn phân tích dữ liệu từ dataset <strong>{selectedDataset?.name}</strong>.</p>
-                  <p className="muted">Ví dụ: "Tổng doanh thu là bao nhiêu?" hoặc "Cho tôi xem doanh thu theo vùng"</p>
+                  <p className="muted">Hỏi về chất lượng, thống kê, tương quan, ngoại lệ, kiểm định hoặc yêu cầu tạo dashboard. Kết quả và thao tác đều ở trong Chat.</p>
+                  <div className="actions">{['Dataset này có bao nhiêu dòng, cột và giá trị thiếu?', 'Phát hiện xu hướng và bất thường từ dataset.', 'Tạo dashboard tổng quan từ dataset.'].map(prompt => <button key={prompt} className="secondary-button" disabled={!canEdit || busy} onClick={() => setMessage(prompt)}>{prompt}</button>)}</div>
                 </div>
               ) : (
                 selectedConv.messages.map(msg => (
@@ -265,7 +271,7 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
 
       {reportDatasetId && <ExplorationReportDialog datasetId={reportDatasetId} onClose={() => setReportDatasetId(null)} />}
       {dashboardId && <ChatDashboardPanel key={dashboardId} id={dashboardId} datasets={datasets} charts={charts}
-        canEdit={canEdit} onClose={closeDashboard} leaveGuard={leaveDashboard} done={message => {
+        canEdit={canEdit} onClose={closeDashboard} onDeleted={() => setDashboardId(null)} leaveGuard={leaveDashboard} done={message => {
           setDashboardVersions(versions => ({ ...versions, [dashboardId]: (versions[dashboardId] ?? 0) + 1 }))
           done(message)
         }} />}

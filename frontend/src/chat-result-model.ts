@@ -4,7 +4,7 @@ export type ResultValue = string | number | null
 export type Measurement = { status: 'available' | 'not_applicable' | 'not_computed'; value: ResultValue; name?: string; reason?: string }
 export type ResultTable = { columns: string[]; rows: Record<string, string | number | boolean | null>[]; truncated: boolean; receivedRows: number }
 export type AnalysisResult = {
-  schemaVersion: 1; kind: 'query' | 'statistical_test'; status: 'success' | 'insufficient_data' | 'not_applicable' | 'error'
+  schemaVersion: 1; kind: 'query' | 'statistical_test'; status: 'success' | 'insufficient_data' | 'not_applicable' | 'error' | 'needs_confirmation'
   title: string; summary?: string; method?: string; hypotheses?: { h0?: string; h1?: string }; alpha?: ResultValue
   sample?: { total?: ResultValue; used?: ResultValue; missing?: ResultValue; excluded?: ResultValue; groups: { name: string; count: ResultValue }[] }
   statistic?: Measurement; pValue?: Measurement
@@ -62,7 +62,7 @@ export function parseChatResult(metadataJson: string): ParsedChatResult {
   }
   const raw = metadata.analysis_result
   if (raw === undefined) return parsed
-  if (!object(raw) || raw.schemaVersion !== 1 || !member(raw.kind, ['query', 'statistical_test']) || !member(raw.status, ['success', 'insufficient_data', 'not_applicable', 'error'])) {
+  if (!object(raw) || raw.schemaVersion !== 1 || !member(raw.kind, ['query', 'statistical_test']) || !member(raw.status, ['success', 'insufficient_data', 'not_applicable', 'error', 'needs_confirmation'])) {
     parsed.problems.push('Phiên bản hoặc cấu trúc kết quả phân tích chưa được hỗ trợ.'); return parsed
   }
   const result: AnalysisResult = {

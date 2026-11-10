@@ -37,7 +37,12 @@ public class Chat {
 
   record AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,
       String templateId,String dashboard_name,Map<String,String> mapping,
-      List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config) {
+      List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config,
+      List<Map<String,Object>> dashboard_filters) {
+    AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,String templateId,
+        String dashboard_name,Map<String,String> mapping,List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config) {
+      this(request_id,intent,query_config,useTemplate,templateId,dashboard_name,mapping,charts,clarification,explanation,statistics_config,null);
+    }
     AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,String templateId,
         String dashboard_name,Map<String,String> mapping,List<Map<String,Object>> charts,String clarification,String explanation) {
       this(request_id,intent,query_config,useTemplate,templateId,dashboard_name,mapping,charts,clarification,explanation,null);
@@ -103,6 +108,7 @@ public class Chat {
       try {
         JsonNode extra=mapper.readTree(saved.get("metadata_json").toString());
         if(extra.has("query_config")) item.put("query_config",extra.get("query_config"));
+        if(extra.has("statistics_config")) item.put("statistics_config",extra.get("statistics_config"));
       } catch(java.io.IOException ignored) { /* Older messages may have no structured context. */ }
       context.add(item);
     }
@@ -179,6 +185,9 @@ public class Chat {
       answer="Dataset có "+overview.get("rowCount")+" dòng, "+overview.get("columnCount")+" cột dữ liệu.\n"+
           "Ô thiếu hiện tại: "+quality.get("missingCells")+"; giá trị số không hữu hạn: "+quality.get("invalidCells")+"; dòng trùng dư: "+quality.get("duplicateRows")+".\n"+
           "Bảng bên dưới có kiểu dữ liệu, tỷ lệ thiếu và số giá trị duy nhất từng cột. Phân tích chỉ đọc, không tự sửa/xóa dữ liệu.";
+      long maxNull=columns.stream().mapToLong(c->((Number)c.get("nullCount")).longValue()).max().orElse(0);
+      String nullNames=String.join(", ",columns.stream().filter(c->((Number)c.get("nullCount")).longValue()==maxNull).map(c->c.get("name").toString()).toList());
+      answer+="\nCột có nhiều NULL nhất: "+nullNames+" ("+maxNull+" ô mỗi cột).";
       Map<String,Object> presentation=new LinkedHashMap<>();
       presentation.put("schemaVersion",1);presentation.put("kind","query");presentation.put("status","success");presentation.put("title","Khám phá chất lượng dataset");
       presentation.put("summary",answer);presentation.put("data",data);presentation.put("warnings",report.get("warnings"));presentation.put("charts",List.of());
@@ -203,6 +212,15 @@ public class Chat {
         extra.put("method","custom");
         extra.put("chart_count",ids.size());
       } else throw Api.bad("AI chưa chọn cách tạo dashboard");
+      if(plan.dashboard_filters()!=null && !plan.dashboard_filters().isEmpty()) {
+        List<Map<String,Object>> scope=new ArrayList<>();
+        for(var filter:plan.dashboard_filters()) {
+          if(!Set.of("column","op","value","end").containsAll(filter.keySet()))throw Api.bad("Bộ lọc dashboard không hợp lệ");
+          var entry=new LinkedHashMap<>(filter);entry.put("datasetId",datasetId.toString());scope.add(entry);
+        }
+        dashboards.saveScope(dashboardId,scope,actor);
+        extra.put("dashboard_filters",scope);
+      }
       answer="Đã tạo dashboard \""+name+"\". Các biểu đồ hiển thị ngay bên dưới; mở dashboard đầy đủ để lọc hoặc chỉnh bố cục.";
       extra.put("dashboard_id",dashboardId.toString());
       extra.put("dashboard_name",name);
