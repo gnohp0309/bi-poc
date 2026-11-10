@@ -89,7 +89,9 @@ Intent clarify dùng clarification. Câu trả lời **query** được dựng t
 
 Lỗi cấu hình AI không hợp lệ được phân biệt với lỗi key/provider bằng header nội bộ X-AI-Error-Code. Web hiển thị thông báo phù hợp, không chuyển nguyên chẩn đoán riêng của provider ra trình duyệt.
 
-Chỉ gửi metadata và 10 tin nhắn gần nhất, không gửi mật khẩu kết nối hoặc toàn bộ bảng/sample rows sang Gemini. Tin nhắn gần nhất có cấu hình phân tích để nối ngữ cảnh. Chưa có tóm tắt dài hạn; hội thoại cũ hơn 10 tin nhắn có thể mất ngữ cảnh đối với model.
+Ở bước lập kế hoạch, gửi metadata và tối đa 10 tin nhắn gần nhất, kèm cấu hình và tóm tắt kết quả đã tính để nối ngữ cảnh. Với lượt phân tích thành công, Spring Boot gọi `/internal/interpret` để Gemini chọn và diễn giải một phần kết quả đã tính. Số liệu trong câu trả lời được chèn từ bằng chứng. Nếu bước diễn giải lỗi hoặc hết thời gian chờ, Chat vẫn trả kết quả từ engine. Không gửi mật khẩu kết nối hoặc toàn bộ bảng nguồn sang Gemini. Hội thoại cũ hơn 10 tin nhắn có thể mất ngữ cảnh đối với model.
+
+Trên file `demo/exploration_dirty_242.csv`, thử hỏi “Phân tích doanh thu giúp tui, có tháng nào bất thường không?”, rồi “Tạm bỏ ngoại lệ đó ra rồi so lại với tháng 3 đi.” Phép tính so sánh giữ cùng dataset và tạm loại ngoại lệ theo IQR, không cập nhật dữ liệu nguồn. Chỉ yêu cầu rõ như “Tạo dashboard doanh thu tháng 3 năm 2025” mới lưu dashboard mới. Chạy kiểm thử hội thoại với `python dev/smoke-chat-first.py --live --conversation --base-url http://127.0.0.1:8081/api` trên môi trường thử.
 
 ## Schema và nâng cấp
 

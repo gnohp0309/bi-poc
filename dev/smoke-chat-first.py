@@ -13,6 +13,7 @@ parser.add_argument('--live', action='store_true', required=True, help='Explicit
 parser.add_argument('--base-url', default='http://127.0.0.1:18086/api')
 parser.add_argument('--output', type=Path, default=REPO / '.local/chat-first-acceptance')
 parser.add_argument('--case', action='append', help='Run a named case; repeat to select several')
+parser.add_argument('--conversation', action='store_true', help='Run the multi-turn conversational acceptance scenario')
 args = parser.parse_args()
 ROOT = args.output
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -149,10 +150,53 @@ def validate_case(label, out):
         if label=='custom': assert {c['type'] for c in out['dashboardCharts']}=={'kpi','histogram'}
 
 
+def check_conversation(dataset, token):
+    conversation = request('/chat/conversations', {'datasetId':dataset,'title':'Kiểm thử hội thoại phân tích 242 dòng'}, token)['id']
+    previous = {dashboard['id'] for dashboard in request('/dashboards', token=token)}
+    results = []
+
+    def ask(question):
+        response = request('/chat/message', {'conversationId':conversation,'message':question}, token)
+        results.append({'question':question, 'response':response})
+        (ROOT/'conversation-results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
+        print(question, response['intent'], response.get('narrative_source', ''), flush=True)
+        return response
+
+    first = ask('Phân tích doanh thu giúp tui, có tháng nào bất thường không?')
+    assert first['narrative_source']=='gemini' and 'dashboard_id' not in first, first
+    assert '1006419' in first['answer'] and '999999' in first['answer'], first['answer']
+    assert '6420' in first['analysis_result']['summary']
+
+    followup = ask('Tạm bỏ ngoại lệ đó ra rồi so lại với tháng 3 đi.')
+    # Planning and recomputation are required. Interpretation may fall back to
+    # the verified engine answer when the second provider call is unavailable.
+    assert followup['narrative_source'] in ('gemini','engine') and 'dashboard_id' not in followup, followup
+    data = followup['analysis_result']['data']['rows']
+    assert [(row['month'], row['without_outliers']) for row in data]==[('2025-02',6420),('2025-03',6900)], data
+    assert '480' in followup['answer'], followup['answer']
+    assert followup['analysis_result']['insightContext'][0]['exclude_outliers'] is True
+
+    chart = ask('Cho tui xem biểu đồ doanh thu theo tháng, đừng tạo dashboard.')
+    assert chart['analysis_result']['charts'] and 'dashboard_id' not in chart, chart
+    assert {d['id'] for d in request('/dashboards', token=token)}==previous
+
+    created = ask('Tạo dashboard doanh thu tháng 3 năm 2025.')
+    assert created['dashboard_id'] not in previous, created
+    detail = request('/dashboards/'+created['dashboard_id'], token=token)
+    assert any(f['value']=='2025-03-01' and f['end']=='2025-03-31' for f in detail['scopeFilters']), detail
+    assert detail['charts'][0]['rows']==[{'label':'2025-03','value':6900}], detail
+    assert len(request('/chat/conversations/'+conversation, token=token)['messages'])==8
+    print('CONVERSATION PASS: Gemini interpretation, grounded comparison, read-only chart, and explicit new dashboard.', flush=True)
+
+
 if __name__ == '__main__':
     token=request('/auth/login',{'username':'admin','password':'Demo2026!'})['token']
     dataset=setup(token);results=[]
     (ROOT/'dataset.txt').write_text(dataset)
+    if args.conversation:
+        try: check_conversation(dataset,token)
+        finally: request('/auth/logout',{},token)
+        raise SystemExit(0)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         tasks=[pool.submit(run_case,label,question,dataset,token) for label,question in CASES.items() if not args.case or label in args.case]
         for task in concurrent.futures.as_completed(tasks):

@@ -32,7 +32,45 @@ class ExplorationWorkflows(unittest.TestCase):
         self.assertEqual(6900, months['2025-03'])
         self.assertEqual(1006419, months['2025-02'])
         self.assertIn('999999', r['summary'])
+        self.assertIn('= 6420', r['summary'])
+        self.assertEqual('2025-02', r['insightContext'][0]['peak_month'])
         json.dumps(r, allow_nan=False)
+
+    def test_242_followup_compares_same_months_with_global_iqr_scope(self):
+        r = run('insights', self.fixture(['revenue','date']), ['revenue','date'], columns=['revenue'],
+                date_column='date', months=['2025-03','2025-02'], exclude_outliers=True)
+        self.assertEqual([6420, 6900], [row['without_outliers'] for row in r['data']['rows']])
+        self.assertEqual([1006419, 6900], [row['total'] for row in r['data']['rows']])
+        self.assertEqual([6420, 6900], [point['value'] for point in r['charts'][0]['rows']])
+        self.assertIn('= 480', r['summary'])
+
+    def test_missing_month_is_not_zero(self):
+        r = run('insights', [[17, '2025-02-01']], ['x','day'], columns=['x'], date_column='day',
+                months=['2025-02','2025-03'])
+        self.assertIsNone(r['data']['rows'][1]['total'])
+        self.assertIsNone(r['charts'][0]['rows'][1]['value'])
+
+    def test_interpretation_drops_invented_numeric_prose_and_keeps_evidence(self):
+        from app.routers.interpret import InterpretationPlan, render_plan
+
+        plan = InterpretationPlan(lead='Tổng là 9999.', evidence_ids=['row2', 'missing', 'row2', 'row1'],
+                                  follow_up='Bạn muốn xem chi tiết không?')
+        self.assertEqual('[[row2]]\n[[row1]]\nBạn muốn xem chi tiết không?',
+                         render_plan(plan, {'row1':'6420', 'row2':'6900'}).answer)
+
+    def test_conversation_keeps_requested_revenue_as_the_only_measure(self):
+        from app.routers.legacy_analyze import AIPlan, AnalyzeRequest, keep_insight_focus
+
+        plan = AIPlan(intent='statistical', statistics_config={'operation':'insights', 'columns':['c_revenue','c_cost']})
+        request = AnalyzeRequest(request_id='a',dataset_name='CSV',question='Phân tích doanh thu giúp tui',columns=[
+            {'name':name,'friendly_name':label,'kind':'number','type':'numeric','aggregates':['sum'],'timeGrains':[]}
+            for name,label in [('c_revenue','revenue'),('c_cost','cost')]])
+        initial = keep_insight_focus(plan, request).statistics_config
+        self.assertEqual(['c_revenue'], initial.columns)
+        followup = AnalyzeRequest.model_validate({**request.model_dump(), 'question':'So lại với tháng 3',
+            'conversation_history':[{'role':'assistant','content':'Kết quả', 'statistics_config':initial.model_dump()}]})
+        plan.statistics_config.months=['2025-02','2025-03']
+        self.assertEqual(['c_revenue'], keep_insight_focus(plan, followup).statistics_config.columns)
 
     def test_auto_compares_missing_normality_variance_then_waits(self):
         r = run('auto_compare', self.fixture(['revenue','branch']), ['revenue','branch'],

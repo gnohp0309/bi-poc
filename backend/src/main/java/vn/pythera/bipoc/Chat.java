@@ -12,7 +12,9 @@ import java.net.URI;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.text.Normalizer;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /** AI proposes a plan; only the dataset-scoped analysis/chart services execute it. */
 @Service
@@ -30,10 +32,13 @@ public class Chat {
   private final DashboardTemplates templates;
   private Statistics statistics;
   private DatasetExploration exploration;
+  private ChatNarrative narrative;
   @org.springframework.beans.factory.annotation.Autowired
   void explorationServices(Statistics statistics,DatasetExploration exploration) {
     this.statistics=statistics;this.exploration=exploration;
   }
+  @org.springframework.beans.factory.annotation.Autowired
+  void narrativeService(ChatNarrative narrative) { this.narrative=narrative; }
 
   record AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,
       String templateId,String dashboard_name,Map<String,String> mapping,
@@ -100,6 +105,7 @@ public class Chat {
         """,conversationId);
     Collections.reverse(history);
     List<Map<String,Object>> context=new ArrayList<>();
+    String recentResult="";
     for(var saved:history) {
       Map<String,Object> item=new LinkedHashMap<>();
       String content=saved.get("content").toString();
@@ -109,6 +115,10 @@ public class Chat {
         JsonNode extra=mapper.readTree(saved.get("metadata_json").toString());
         if(extra.has("query_config")) item.put("query_config",extra.get("query_config"));
         if(extra.has("statistics_config")) item.put("statistics_config",extra.get("statistics_config"));
+        if(extra.hasNonNull("result_context")) {
+          recentResult=ChatNarrative.bounded(extra.path("result_context").asText(),1800);
+          item.put("result_context",recentResult);
+        }
       } catch(java.io.IOException ignored) { /* Older messages may have no structured context. */ }
       context.add(item);
     }
@@ -116,10 +126,10 @@ public class Chat {
     Map<String,Object> request=Map.of("request_id",requestId,"question",message,"dataset_name",metadata.name(),
         "columns",metadata.columns().stream().map(c->Map.of("name",c.name(),"type",c.type(),"kind",c.kind(),
             "friendly_name",c.label(),"aggregates",c.aggregates(),"timeGrains",c.timeGrains())).toList(),
-        "conversation_history",context);
+        "conversation_history",context,"dashboard_creation_allowed",requestsDashboard(message));
     AIResponse plan=callAI(request);
     if(!requestId.equals(plan.request_id())) throw new Api.Failure(502,"Phản hồi AI không khớp yêu cầu");
-    return executePlan(conversationId,datasetId,message,plan,actor);
+    return executePlan(conversationId,datasetId,message,plan,actor,recentResult);
   }
   AIResponse callAI(Map<String,Object> body) {
     try {
@@ -151,7 +161,14 @@ public class Chat {
   }
   // Invoked inside sendMessage's transaction: any failed chart/message rolls back the entire turn.
   Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor) {
+    return executePlan(conversationId,datasetId,message,plan,actor,"");
+  }
+  private Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor,String recentResult) {
     auth.canEdit(actor);
+    if("create_dashboard".equals(plan.intent()) && !requestsDashboard(message)) {
+      plan=new AIResponse(plan.request_id(),"clarify",null,null,null,null,null,null,
+          "Bạn muốn phân tích ngay trong Chat hay tạo dashboard mới? Nếu muốn tạo, hãy nói rõ bạn muốn dashboard về nội dung nào.",null);
+    }
     Map<String,Object> extra=new LinkedHashMap<>();
     Map<String,Object> result=new LinkedHashMap<>();
     String answer;
@@ -228,6 +245,23 @@ public class Chat {
     } else if("clarify".equals(plan.intent())) {
       answer=bounded(plan.clarification(),2000,"Câu hỏi làm rõ");
     } else throw Api.bad("AI trả loại yêu cầu không được hỗ trợ");
+    if(result.get("analysis_result") instanceof Map<?,?> report) {
+      JsonNode verified=mapper.valueToTree(report);
+      String insight=verified.has("insightContext") ? "Phạm vi Insights đã chạy: "+verified.get("insightContext")+"\n" : "";
+      extra.put("result_context",ChatNarrative.bounded(insight+answer,1800));
+      if(narrative!=null) {
+        var explanation=narrative.explain(message,report,recentResult);
+        result.put("narrative_source",explanation.isPresent()?"gemini":"engine");
+        if(explanation.isPresent()) {
+          answer=explanation.get();
+          Map<String,Object> withNarrative=new LinkedHashMap<>();
+          report.forEach((k,v)->withNarrative.put(k.toString(),v));
+          withNarrative.put("narrative",answer);
+          extra.put("analysis_result",withNarrative);
+          result.put("analysis_result",withNarrative);
+        }
+      }
+    }
     extra.put("intent",plan.intent());
     UUID assistantId=UUID.randomUUID();
     try {
@@ -241,6 +275,19 @@ public class Chat {
     result.put("intent",plan.intent());
     result.put("answer",answer);
     return result;
+  }
+  private static final String DASHBOARD="(?:dashboard|bang dieu khien|bang tong quan)";
+  private static final String CREATE_DASHBOARD="(?:(?:tao|lam|lap|dung|thiet ke|create|build|generate)"
+      +"(?: (?:giup|cho|minh|tui|toi|em|ban|mot|cai|them|moi|luon|di|a|an|new)){0,7}"
+      +"|(?:luu|chuyen)(?: ket qua| phan tich| nay| no| thanh){1,5}|save(?: (?:this|it|result|as|a)){0,5}) "+DASHBOARD;
+  private static final Pattern DASHBOARD_REQUEST=Pattern.compile("\\b"+CREATE_DASHBOARD+"\\b");
+  private static final Pattern DASHBOARD_NON_REQUEST=Pattern.compile("\\b(?:khong(?: can| muon| duoc)?|dung|chua|tam dung|"
+      +"chi hoi cach|cach|lam sao de|huong dan(?: cach)?|giai thich cach|neu toi noi|tai sao|vi sao|"
+      +"do not|don t|how to|how do i|why did you)(?: (?:hay|giup|tui|toi|minh|ban|lai)){0,4} "+CREATE_DASHBOARD+"\\b");
+  static boolean requestsDashboard(String message) {
+    String normalized=Normalizer.normalize(message.toLowerCase(Locale.ROOT),Normalizer.Form.NFD)
+        .replaceAll("\\p{M}+", "").replace('đ','d').replaceAll("[^a-z0-9]+", " ").strip();
+    return DASHBOARD_REQUEST.matcher(normalized).find() && !DASHBOARD_NON_REQUEST.matcher(normalized).find();
   }
   static List<Map<String,Object>> customSpecs(List<Map<String,Object>> proposed,UUID datasetId) {
     if(proposed==null || proposed.size()<2 || proposed.size()>4) throw Api.bad("Dashboard custom cần từ 2 đến 4 biểu đồ");

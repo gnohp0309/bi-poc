@@ -56,7 +56,7 @@ Cỡ mẫu tách `total` (nguồn), `used`, `missing` và `excluded` (ngoài nh�
 
 ## Chat và Gemini
 
-Giữ các nhánh query/create_dashboard/clarify, thêm explore và statistical. Gemini chỉ gửi cấu hình, không gửi p-value/statistic hoặc số liệu kết quả. Schema provider dùng chuỗi JSON cho cấu hình custom chart/statistical để tránh lỗi constraint quá nhiều trạng thái; sau giải mã vẫn kiểm tra đầy đủ bằng Pydantic và Spring Boot. Một thao tác chỉ gọi provider một lần, không tự retry trả phí.
+Giữ các nhánh query/create_dashboard/clarify, thêm explore và statistical. Bước lập kế hoạch trả cấu hình. PostgreSQL và engine thống kê tính số liệu, sau đó Gemini có thể chọn và diễn giải các bằng chứng đã tính. Schema provider dùng chuỗi JSON cho cấu hình custom chart/statistical để giới hạn độ phức tạp, sau giải mã vẫn kiểm tra bằng Pydantic và Spring Boot. Bước diễn giải gọi provider riêng và có đường trả kết quả engine khi lỗi. Hệ thống không tự retry trả phí.
 
 Giao diện Khám phá dữ liệu có form chạy engine trực tiếp, không cần Gemini. Các route Python `/api/stats/*` cũ không còn tự sinh dữ liệu khi chưa được cấp dataset; luồng tích hợp dùng API Spring Boot phía trên. Cổng AI mặc định thống nhất 8000. Nếu đổi `POC_SECRET_KEY`, đặt cùng giá trị ở Spring Boot và môi trường AI; không đưa khóa vào frontend.
 

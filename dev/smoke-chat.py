@@ -86,6 +86,7 @@ def run():
         cid,answer=ask("total")
         assert answer["data"]["rows"][0]["revenue"]==32.7,answer
         assert "32.7" in answer["answer"],answer
+        assert answer['narrative_source']=='engine', answer
         presentation = answer["analysis_result"]
         assert presentation["schemaVersion"] == 1 and presentation["kind"] == "query"
         assert presentation["data"]["rows"][0]["revenue"] == 32.7
@@ -110,14 +111,18 @@ def run():
         assert answer["data"]["rows"][0]["revenue"] is None and "NULL" in answer["answer"]
         _,answer=ask("clarify")
         assert answer["intent"]=="clarify"
-        for q,count in (("template",3),("custom",2)):
+        before=len(call("/dashboards",token=admin))
+        _,blocked=ask("dashboard-only-plan-without-user-request")
+        assert blocked["intent"]=="clarify" and "dashboard_id" not in blocked
+        assert len(call("/dashboards",token=admin))==before
+        for q,count in (("Tạo dashboard template",3),("Tạo dashboard custom",2)):
             _,answer=ask(q)
             dashboard=call("/dashboards/"+answer["dashboard_id"],token=admin)
             assert len(dashboard["charts"])==count
             # Aggregate independently; source sum is 32.70.
             revenue=next(c for c in dashboard["charts"] if c["aggregate"]=="sum")
             assert sum(row["value"] for row in revenue["rows"])==32.7
-        for question,expected in (("sql-injection",502),("other-column",400),("provider-failure",502),("custom-partial",400)):
+        for question,expected in (("sql-injection",502),("other-column",400),("provider-failure",502),("Tạo dashboard custom-partial",400)):
             charts_before=len(call("/charts",token=admin))
             dashboards_before=len(call("/dashboards",token=admin))
             failure_cid=newconv()
@@ -128,13 +133,13 @@ def run():
             assert call("/chat/conversations/"+failure_cid,token=admin)["messages"]==[]
         # Fail after charts/dashboard were inserted, to prove real database rollback.
         sql("""CREATE OR REPLACE FUNCTION chat_smoke_fail() RETURNS trigger LANGUAGE plpgsql AS $$
-            BEGIN IF NEW.content='rollback-persistence' THEN RAISE EXCEPTION 'test persistence failure'; END IF;
+            BEGIN IF NEW.content LIKE '%rollback-persistence' THEN RAISE EXCEPTION 'test persistence failure'; END IF;
             RETURN NEW; END $$;
             CREATE TRIGGER chat_smoke_fail BEFORE INSERT ON chat_messages FOR EACH ROW EXECUTE FUNCTION chat_smoke_fail();""")
         try:
             before=sql("SELECT (SELECT count(*) FROM charts)||','||(SELECT count(*) FROM dashboards)")
             rollback_cid=newconv()
-            ask("rollback-persistence",expect=500,cid=rollback_cid)
+            ask("Tạo dashboard rollback-persistence",expect=500,cid=rollback_cid)
             assert sql("SELECT (SELECT count(*) FROM charts)||','||(SELECT count(*) FROM dashboards)")==before
             assert call("/chat/conversations/"+rollback_cid,token=admin)["messages"]==[]
         finally:

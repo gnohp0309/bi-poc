@@ -30,7 +30,7 @@ public class Statistics {
     String op=config.path("operation").asText();if(!METHODS.contains(op))throw Api.bad("Phương pháp thống kê không hỗ trợ");
     Set<String> fields=new HashSet<>(List.of("operation"));
     if(Set.of("descriptive","correlation","insights").contains(op))fields.add("columns");
-    if(op.equals("insights"))fields.add("date_column");
+    if(op.equals("insights"))fields.addAll(List.of("date_column","months","exclude_outliers"));
     if(op.equals("auto_compare"))fields.add("independent");
     if(Set.of("outlier","shapiro_wilk").contains(op))fields.add("column");
     if(Set.of("independent_ttest","anova","mann_whitney","kruskal_wallis","auto_compare").contains(op))fields.addAll(List.of("value_column","group_column","group_values"));
@@ -57,6 +57,22 @@ public class Statistics {
       var date=config.get("date_column");checkColumn(date,known,false);
       if(!known.get(date.asText()).kind().equals("date"))throw Api.bad("Cột thời gian phải có kiểu ngày");
       selected.add(date.asText());p.put("date_column",date.asText());
+    }
+    if(config.has("months")) {
+      var months=config.get("months");
+      if(!p.containsKey("date_column") || !months.isArray() || months.isEmpty() || months.size()>12)
+        throw Api.bad("Chọn 1–12 tháng và cột ngày để so sánh");
+      Set<String> periods=new TreeSet<>();
+      for(var month:months) {
+        if(!month.isTextual() || !month.asText().matches("[1-9][0-9]{3}-(0[1-9]|1[0-2])") || !periods.add(month.asText()))
+          throw Api.bad("Tháng cần đúng YYYY-MM và không trùng nhau");
+      }
+      p.put("months",new ArrayList<>(periods));
+    }
+    if(config.has("exclude_outliers")) {
+      if(!config.get("exclude_outliers").isBoolean() || !p.containsKey("date_column"))
+        throw Api.bad("Phân tích theo thời gian bỏ ngoại lệ cần cột ngày và tùy chọn đúng/sai");
+      p.put("exclude_outliers",config.get("exclude_outliers").asBoolean());
     }
     if(config.has("independent")) {
       if(!config.get("independent").isBoolean())throw Api.bad("independent phải là boolean");

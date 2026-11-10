@@ -5,7 +5,7 @@ export type Measurement = { status: 'available' | 'not_applicable' | 'not_comput
 export type ResultTable = { columns: string[]; rows: Record<string, string | number | boolean | null>[]; truncated: boolean; receivedRows: number }
 export type AnalysisResult = {
   schemaVersion: 1; kind: 'query' | 'statistical_test'; status: 'success' | 'insufficient_data' | 'not_applicable' | 'error' | 'needs_confirmation'
-  title: string; summary?: string; method?: string; hypotheses?: { h0?: string; h1?: string }; alpha?: ResultValue
+  title: string; summary?: string; narrative?: string; method?: string; hypotheses?: { h0?: string; h1?: string }; alpha?: ResultValue
   sample?: { total?: ResultValue; used?: ResultValue; missing?: ResultValue; excluded?: ResultValue; groups: { name: string; count: ResultValue }[] }
   statistic?: Measurement; pValue?: Measurement
   confidenceInterval?: { status: Measurement['status']; lower: ResultValue; upper: ResultValue; level?: ResultValue; reason?: string }
@@ -67,7 +67,7 @@ export function parseChatResult(metadataJson: string): ParsedChatResult {
   }
   const result: AnalysisResult = {
     schemaVersion: 1, kind: raw.kind, status: raw.status, title: string(raw.title) || (raw.kind === 'statistical_test' ? 'Kết quả kiểm định thống kê' : 'Kết quả phân tích'),
-    summary: string(raw.summary), method: string(raw.method), alpha: value(raw.alpha), statistic: measurement(raw.statistic), pValue: measurement(raw.pValue), effectSize: measurement(raw.effectSize),
+    summary: string(raw.summary), narrative: string(raw.narrative), method: string(raw.method), alpha: value(raw.alpha), statistic: measurement(raw.statistic), pValue: measurement(raw.pValue), effectSize: measurement(raw.effectSize),
     warnings: strings(raw.warnings), conclusion: string(raw.conclusion), reason: string(raw.reason), assumptions: [], charts: [],
   }
   if (raw.data !== undefined) {

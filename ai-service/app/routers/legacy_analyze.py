@@ -2,6 +2,8 @@
 import json
 import logging
 import os
+import re
+import unicodedata
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -61,6 +63,7 @@ class HistoryMessage(StrictModel):
     content: str = Field(max_length=4000)
     query_config: AnalysisConfig | None = None
     statistics_config: dict | None = None
+    result_context: str | None = Field(default=None, max_length=1800)
 
 
 class AnalyzeRequest(StrictModel):
@@ -69,6 +72,7 @@ class AnalyzeRequest(StrictModel):
     columns: list[ColumnMetadata]
     question: str = Field(min_length=1, max_length=4000)
     conversation_history: list[HistoryMessage] = Field(default_factory=list, max_length=10)
+    dashboard_creation_allowed: bool | None = None
 
 
 class ChartSpec(StrictModel):
@@ -104,6 +108,8 @@ class StatisticsConfig(StrictModel):
     equal_variance: bool | None = None
     independent: bool | None = None
     date_column: str | None = None
+    months: list[str] | None = Field(default=None, min_length=1, max_length=12)
+    exclude_outliers: bool | None = None
 
 class DashboardDateFilter(StrictModel):
     column: str
@@ -236,7 +242,8 @@ Các nhánh bổ sung:
   KHÔNG yêu cầu người dùng tự chọn phép kiểm định. independent=true CHỈ khi người dùng xác nhận các quan sát/nhóm độc lập trong câu hỏi hoặc lịch sử.
   Khi chưa biết độc lập, vẫn trả auto_compare, bỏ independent; engine trả kết quả kiểm tra sơ bộ và hỏi xác nhận trước khi kiểm định.
   Nếu người dùng nói ghép cặp thì hỏi cột trước/sau và dùng paired_ttest, không coi là độc lập.
-  insights: nhận xét, xu hướng, bất thường: columns các cột số cần phân tích (tối đa 10), date_column nếu có cột thời gian thích hợp.
+  insights: dùng cho yêu cầu phân tích mở, tìm điều đáng chú ý, nhận xét, xu hướng hoặc bất thường. Chọn columns chỉ gồm các chỉ số người dùng hỏi, date_column nếu có thời gian phù hợp. Ví dụ 'phân tích doanh thu, có tháng nào bất thường' chỉ dùng một cột doanh thu và một cột ngày; tuyệt đối không thêm chi phí, trước/sau, ID hoặc tọa độ. Chỉ chọn nhiều chỉ số khi người dùng yêu cầu chúng hoặc yêu cầu khảo sát tất cả cột số. Không tạo dashboard để trả lời câu hỏi phân tích.
+  Nếu hỏi nối tiếp về ngoại lệ tháng hoặc so sánh sau khi bỏ ngoại lệ, dùng lại insights và các cột từ lượt trước. Trường months là các tháng cần xem/so sánh theo YYYY-MM, gồm cả tháng trước được nhắc tới và tháng mới khi hỏi 'so lại với tháng X'. Dùng năm từ kết quả trước nếu rõ, nếu mơ hồ thì hỏi. exclude_outliers=true khi người dùng muốn tính lại bỏ ngoại lệ hoặc chấp nhận đề xuất đó trong lượt trước. Engine giữ ngưỡng IQR từ toàn dataset rồi tính theo tháng. Không tự loại ngoại lệ khi chưa có yêu cầu. Nếu đã loại ở lượt trước, giữ điều kiện cho câu nối tiếp trừ khi người dùng đổi.
   Tìm ngoại lệ toàn dataset chưa chỉ cột cũng dùng insights với các cột số. Engine tự tính IQR và tổng theo tháng, không bịa lời giải thích.
   Ví dụ: {"decision":{"intent":"statistical","statistics_config":{"operation":"descriptive","columns":["amount"]}}}
 Các nhánh BI hiện có:
@@ -251,7 +258,9 @@ Các nhánh BI hiện có:
    Nếu cần dữ liệu thô từng dòng hoặc công thức không có trong hợp đồng, dùng clarify;
    không thay yêu cầu đó bằng một phép tính khác mà không giải thích.
    Với câu nối tiếp, dùng query_config gần nhất trong lịch sử để giữ ngữ cảnh/bộ lọc.
+   Dùng result_context và câu trả lời trước để giải nghĩa 'tháng đó', 'so lại', 'còn nhóm B', nhưng chạy lại phép tính trên dataset. Không dùng một câu hỏi cũ để đổi ý định của câu mới. Nếu lượt trước hỏi làm rõ, kết hợp câu trả lời của người dùng với câu hỏi đang dang dở.
 2. create_dashboard: ưu tiên template nếu có đủ cột đúng nghĩa, không đánh đồng giá với doanh thu:
+   CHỈ tạo khi dashboard_creation_allowed không phải false và lượt mới chủ động yêu cầu tạo/lưu dashboard. Hỏi xem số liệu, vẽ biểu đồ, nhận xét dashboard hoặc hỏi cách tạo không phải yêu cầu tạo. Một biểu đồ trả qua query/statistical là kết quả phân tích, không lưu dashboard.
    sales-overview: mapping date (date), revenue (number), region (text), category (text).
    product-analysis: product (text), revenue (number), quantity (number), category (text).
    order-status: date (date), revenue (number), status (text).
@@ -262,7 +271,7 @@ Các nhánh BI hiện có:
    timeGrain=month chỉ dùng cột date; thời gian có múi giờ được nhóm theo UTC.
    dashboard_filters phải giữ TOÀN BỘ phạm vi người dùng yêu cầu: ngày, khu vực, danh mục. Dùng [{column,op:"date",value:"YYYY-MM-DD",end:"YYYY-MM-DD"}] với hai ngày bao gồm; eq cho giá trị phân loại; null cho NULL.
    Ví dụ tháng 03/2025: value=2025-03-01,end=2025-03-31. Năm 2026: 2026-01-01 đến 2026-12-31. Không bỏ bộ lọc khi dùng template hoặc custom; không có yêu cầu lọc thì [].
-   Thiếu năm hoặc cột lọc không có thì clarify; không tự suy đoán năm.
+   Thiếu năm hoặc cột lọc không có thì clarify; không tự suy đoán năm. Khi yêu cầu tạo từ kết quả đã lọc, giữ phạm vi đó. Nếu kết quả trước tạm bỏ ngoại lệ IQR mà dashboard không hỗ trợ bộ lọc đó, hỏi rõ trước khi tạo từ dữ liệu gốc.
 3. clarify: thiếu cột, yêu cầu mơ hồ/ngoài khả năng thì đặt câu hỏi làm rõ.
    intent phải là "clarify", không phải "clarification"; clarification là trường chứa câu hỏi.
    Ví dụ: {"decision":{"intent":"clarify","clarification":"Dataset không có cột profit. Bạn muốn dùng cột nào?"}}
@@ -308,6 +317,51 @@ def provider_schema() -> dict:
     return schema
 
 
+def normalized_words(value: str) -> str:
+    plain = ''.join(ch for ch in unicodedata.normalize('NFD', value.lower()) if not unicodedata.combining(ch))
+    return re.sub(r'[^a-z0-9]+', ' ', plain.replace('đ', 'd')).strip()
+
+
+def keep_insight_focus(plan: AIPlan, request: AnalyzeRequest) -> AIPlan:
+    """Keep an unambiguous BI measure and carry it across a relative follow-up."""
+    config = plan.statistics_config
+    if plan.intent != 'statistical' or config is None or config.operation != 'insights':
+        return plan
+    question = ' ' + normalized_words(request.question) + ' '
+    numeric = [column for column in request.columns if column.kind == 'number']
+    domain_names = (
+        {'revenue', 'sales revenue', 'total revenue', 'doanh thu'},
+        {'cost', 'total cost', 'chi phi'},
+        {'profit', 'net profit', 'loi nhuan'},
+        {'quantity', 'so luong'},
+    )
+    explicit = set()
+    for column in numeric:
+        for name in (column.name, column.friendly_name):
+            label = normalized_words(name)
+            if label and f' {label} ' in question:
+                explicit.add(column.name)
+    for aliases in domain_names:
+        if not any(f' {alias} ' in question for alias in aliases):
+            continue
+        matches = [column.name for column in numeric if
+                   normalized_words(column.name.removeprefix('c_')) in aliases
+                   or normalized_words(column.friendly_name) in aliases]
+        if len(matches) == 1:
+            explicit.add(matches[0])
+    focus = [column.name for column in numeric if column.name in explicit and column.name in (config.columns or [])]
+    if not explicit and (config.months or config.exclude_outliers):
+        known = {column.name for column in numeric}
+        previous = next((item.statistics_config for item in reversed(request.conversation_history)
+                         if item.role == 'assistant' and item.statistics_config
+                         and item.statistics_config.get('operation') == 'insights'), None)
+        if previous and isinstance(previous.get('columns'), list):
+            focus = [name for name in previous['columns'] if isinstance(name, str) and name in known]
+    if focus and len(focus) <= (9 if config.date_column else 10):
+        return plan.model_copy(update={'statistics_config':config.model_copy(update={'columns':focus})})
+    return plan
+
+
 def generate_plan(request: AnalyzeRequest) -> AIPlan:
     key = os.getenv("GEMINI_API_KEY", "").strip()
     if not key or key == "your_gemini_api_key_here":
@@ -334,7 +388,7 @@ def generate_plan(request: AnalyzeRequest) -> AIPlan:
         for field in ("charts","statistics_config","dashboard_filters"):
             if isinstance(decision.get(field),str):decision[field]=json.loads(decision[field])
     generated = GeneratedPlan.model_validate(decoded)
-    return AIPlan.model_validate(generated.decision.model_dump(exclude_none=True))
+    return keep_insight_focus(AIPlan.model_validate(generated.decision.model_dump(exclude_none=True)), request)
 
 
 @router.post("/analyze", response_model=AnalyzeResponse, response_model_exclude_none=True,

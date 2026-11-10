@@ -19,7 +19,8 @@ export function ChatResult({ metadataJson, content, openDashboard, dashboardVers
   const result = parsed.result
   const reportId = parsed.explorationDatasetId
   return <>
-    {result ? <details className="chat-result-original"><summary>Xem câu trả lời dạng văn bản</summary><Text content={content} /></details> : <Text content={content} />}
+    {!result ? <Text content={content} /> : result.narrative ? <Text content={result.narrative} /> :
+      <details className="chat-result-original"><summary>Xem câu trả lời dạng văn bản</summary><Text content={content} /></details>}
     {parsed.problems.length > 0 && <div className="chat-result-warning" role="status">{parsed.problems.map((p, i) => <p key={i}>{p}</p>)}</div>}
     <div className="message-meta">
       {result && <AnalysisResultView result={result} />}
