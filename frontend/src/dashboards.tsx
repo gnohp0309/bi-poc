@@ -37,7 +37,6 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
   const [editingLayout, setEditingLayout] = useState(false)
   const [draft, setDraft] = useState<GridItem[]>([])
   const [editSpec, setEditSpec] = useState<ChartDefinition | null>(null)
-  const [creatingChart, setCreatingChart] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
   const [refreshSeconds, setRefreshSeconds] = useState(0)
   const [autoRefreshError, setAutoRefreshError] = useState('')
@@ -49,7 +48,7 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
   const availableDashboards = dashboards.filter(d => !deletedIds.includes(d.id))
   const dirty = detail && JSON.stringify(ordered(draft)) !== JSON.stringify(ordered(readLayout(detail.charts)))
   const leaveGuard = panel?.leaveGuard
-  const unsaved = !!(editingLayout && dirty || editSpec || creatingChart || detail && dashboardName !== detail.name)
+  const unsaved = !!(editingLayout && dirty || editSpec || detail && dashboardName !== detail.name)
   useEffect(() => { closeButton.current?.focus() }, [])
   useEffect(() => {
     const canLeave = () => !busy && !editBusy && !exporting && (!unsaved || window.confirm('Bỏ các thay đổi chưa lưu?'))
@@ -124,7 +123,7 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
     await mutate(async () => { setEditSpec(await api<ChartDefinition>(`/charts/${value}`)) })
   }
   const locked = busy || loading || editingLayout || editBusy
-  const refreshPaused = locked || exporting || !!drill || !!editSpec || creatingChart || dashboardName !== detail?.name
+  const refreshPaused = locked || exporting || !!drill || !!editSpec || dashboardName !== detail?.name
   const autoRefreshEnabled = !!panel && !!detail && refreshSeconds > 0 && !refreshPaused
   useEffect(() => {
     if (!autoRefreshEnabled) return
@@ -135,13 +134,11 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
   }, [autoRefreshEnabled, refreshSeconds, id, load])
   const url = detail?.share_token ? `${window.location.origin}/?share=${detail.share_token}` : ''
   const addChartControls = <section className="surface">
-    <SectionTitle label={panel ? 'Thêm biểu đồ vào dashboard' : 'Biểu đồ & lọc'} />
+    <SectionTitle label="Biểu đồ & lọc" />
     <div className="inline-form">
       <label>Thêm biểu đồ<select value={chartId} disabled={!canEdit || locked} onChange={e => setChartId(e.target.value)}><option value="">Chọn biểu đồ</option>{charts.filter(c => !detail?.charts.some(d => d.id === c.id)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <button className="secondary-button" disabled={!canEdit || locked || !detail || !chartId || detail.charts.length >= 24} onClick={add}>Thêm</button>
-      {panel && <button className="secondary-button" disabled={!canEdit || locked || !detail || detail.charts.length >= 24} onClick={() => setCreatingChart(value => !value)}>{creatingChart ? 'Đóng tạo biểu đồ' : 'Tạo biểu đồ mới trong Chat'}</button>}
     </div>
-    {creatingChart && detail && <ChartsPage datasets={detail.scopeFilters?.length ? datasets.filter(d => detail.scopeFilters?.some(f => f.datasetId === d.id)) : datasets} charts={[]} dashboardId={id} previewFilters={appliedFilters.current} canEdit={canEdit} done={done} onBusyChange={setEditBusy} onCreated={async chart => { await persist(appendItem(readLayout(detail.charts), chart)); setCreatingChart(false) }} />}
   </section>
   return <>
     {panel && <div className="chat-dashboard-panel-header">
@@ -158,8 +155,7 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
       </div></section>
       {addChartControls}
     </div></>}
-    {panel && canEdit && detail && addChartControls}
-    {id && <DashboardFilters key={id + [...new Set(detail?.charts.map(c => c.datasetId) || [])].sort().join()} initialFilters={appliedFilters.current} id={id} disabled={locked || !detail} refreshedAt={refreshedAt} onApply={filters => load(id, filters)} onRefresh={() => load()} />}
+    {!panel && id && <DashboardFilters key={id + [...new Set(detail?.charts.map(c => c.datasetId) || [])].sort().join()} initialFilters={appliedFilters.current} id={id} disabled={locked || !detail} refreshedAt={refreshedAt} onApply={filters => load(id, filters)} onRefresh={() => load()} />}
     {panel && detail && <section className="surface chat-auto-refresh">
       <label>Tự động cập nhật
         <select value={refreshSeconds} onChange={event => {
@@ -180,7 +176,7 @@ export function DashboardsPage({ dashboards, charts, datasets, canEdit, done, in
     {loading && <p role="status">Đang tải dashboard…</p>}
     {detail ? <>
       {detail.scopeFilters?.length ? <section className="notice"><div><strong>Phạm vi đã lưu từ yêu cầu Chat</strong><p>Các bộ lọc bên trên áp dụng thêm trong phạm vi này; mở lại, xuất file và chia sẻ đều giữ phạm vi.</p><ExportContext filters={detail.scopeFilters} datasets={datasets} refreshedAt="" /></div></section> : null}
-      <DashboardExport key={id} dashboard={detail} filters={[...(detail.scopeFilters || []), ...appliedFilters.current]} datasets={datasets} refreshedAt={refreshedAt} root={exportRoot} disabled={locked} onBusyChange={setExporting} />
+      {!panel && <DashboardExport key={id} dashboard={detail} filters={[...(detail.scopeFilters || []), ...appliedFilters.current]} datasets={datasets} refreshedAt={refreshedAt} root={exportRoot} disabled={locked} onBusyChange={setExporting} />}
       {canEdit && <section className="surface"><form className="dashboard-rename-form" onSubmit={e => { e.preventDefault(); rename() }}><label>Tên dashboard<input maxLength={200} value={dashboardName} disabled={locked} onChange={e => setDashboardName(e.target.value)} required /></label><button className="secondary-button" disabled={locked || !dashboardName.trim() || dashboardName.trim() === detail.name}>Lưu tên</button></form>
         <div className="dashboard-layout-actions actions">{editingLayout ? <><button className="primary-button" disabled={busy || !dirty} onClick={() => mutate(() => persist(draft))}>Lưu bố cục</button><button className="secondary-button" disabled={busy} onClick={() => { setDraft(readLayout(detail.charts)); setEditingLayout(false); setStatus('') }}>Hủy bố cục</button><p>{dirty ? 'Có thay đổi chưa lưu.' : 'Chưa có thay đổi.'}</p></> : <button className="secondary-button" disabled={locked || !detail.charts.length} onClick={() => { setDraft(readLayout(detail.charts)); setEditingLayout(true); setStatus('') }}>Chỉnh bố cục</button>}</div>
       </section>}

@@ -11,9 +11,9 @@ const stateLabels = { success: 'Đã có kết quả', insufficient_data: 'Khôn
 const assumptionLabels = { passed: 'Đạt', failed: 'Không đạt', not_checked: 'Chưa kiểm tra', not_applicable: 'Không áp dụng' }
 function Text({ content }: { content: string }) { return <div className="message-content">{content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div> }
 
-export function ChatResult({ metadataJson, content, openDashboard, dashboardVersions, datasetId, onOpenReport }: {
+export function ChatResult({ metadataJson, content, openDashboard, dashboardVersions, datasetId, datasets = [], onOpenReport }: {
   metadataJson: string; content: string; openDashboard: OpenChatDashboard; dashboardVersions?: Record<string, number>
-  datasetId?: string; onOpenReport?: (id: string) => void
+  datasetId?: string; datasets?: import('./api').Dataset[]; onOpenReport?: (id: string) => void
 }) {
   const parsed = useMemo(() => parseChatResult(metadataJson), [metadataJson])
   const result = parsed.result
@@ -25,7 +25,7 @@ export function ChatResult({ metadataJson, content, openDashboard, dashboardVers
     <div className="message-meta">
       {result && <AnalysisResultView result={result} />}
       {!result && parsed.table && <ResultTableView table={parsed.table} />}
-      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} />}
+      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} datasets={datasets} exportFormat={parsed.dashboardExport} />}
     </div>
     {reportId && reportId.toLowerCase() === datasetId?.toLowerCase() && onOpenReport &&
       <button className="secondary-button chat-exploration-button" onClick={() => onOpenReport(reportId)}>Xem báo cáo chi tiết</button>}

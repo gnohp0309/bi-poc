@@ -34,6 +34,8 @@ public class Chat {
   private DatasetExploration exploration;
   private ChatNarrative narrative;
   @org.springframework.beans.factory.annotation.Autowired
+  private ChatDashboardActions dashboardActions;
+  @org.springframework.beans.factory.annotation.Autowired
   void explorationServices(Statistics statistics,DatasetExploration exploration) {
     this.statistics=statistics;this.exploration=exploration;
   }
@@ -43,10 +45,10 @@ public class Chat {
   record AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,
       String templateId,String dashboard_name,Map<String,String> mapping,
       List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config,
-      List<Map<String,Object>> dashboard_filters) {
+      List<Map<String,Object>> dashboard_filters, JsonNode dashboard_action) {
     AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,String templateId,
         String dashboard_name,Map<String,String> mapping,List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config) {
-      this(request_id,intent,query_config,useTemplate,templateId,dashboard_name,mapping,charts,clarification,explanation,statistics_config,null);
+      this(request_id,intent,query_config,useTemplate,templateId,dashboard_name,mapping,charts,clarification,explanation,statistics_config,null,null);
     }
     AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,String templateId,
         String dashboard_name,Map<String,String> mapping,List<Map<String,Object>> charts,String clarification,String explanation) {
@@ -123,13 +125,37 @@ public class Chat {
       context.add(item);
     }
     String requestId=UUID.randomUUID().toString();
-    Map<String,Object> request=Map.of("request_id",requestId,"question",message,"dataset_name",metadata.name(),
+    var requested=ChatDashboardActions.requestedActions(message);
+    var target=requested.isEmpty()?Optional.<ChatDashboardActions.Target>empty():dashboardActions.latest(conversationId,actor);
+    Map<String,Object> request=new LinkedHashMap<>(Map.of("request_id",requestId,"question",message,"dataset_name",metadata.name(),
         "columns",metadata.columns().stream().map(c->Map.of("name",c.name(),"type",c.type(),"kind",c.kind(),
             "friendly_name",c.label(),"aggregates",c.aggregates(),"timeGrains",c.timeGrains())).toList(),
-        "conversation_history",context,"dashboard_creation_allowed",requestsDashboard(message));
-    AIResponse plan=callAI(request);
+        "conversation_history",context,"dashboard_creation_allowed",requestsDashboard(message)));
+    target.ifPresent(dashboard->request.put("dashboard_context",Map.of("name",dashboard.name(),"allowed_actions",requested)));
+    if(target.isEmpty() && !requested.isEmpty() && (!requested.equals(Set.of("filters")) || normalizedWords(message).contains("dashboard"))) {
+      var clarify=new AIResponse(requestId,"clarify",null,null,null,null,null,null,
+          "Hãy tạo dashboard trong hội thoại này trước khi yêu cầu cập nhật hoặc xuất file.",null);
+      return executePlan(conversationId,datasetId,message,clarify,actor,recentResult,null,Set.of());
+    }
+    AIResponse plan;
+    if(target.isPresent() && requested.equals(Set.of("export_format"))) {
+      var formats=ChatDashboardActions.exportFormats(message);
+      if(formats.size()!=1) {
+        plan=new AIResponse(requestId,"clarify",null,null,null,null,null,null,
+            "Hãy chọn một định dạng cho mỗi lượt xuất: Excel, PDF hoặc PNG.",null);
+      } else {
+        plan=new AIResponse(requestId,"dashboard_action",null,null,null,null,null,null,null,null,null,null,
+            mapper.createObjectNode().put("export_format",formats.iterator().next()));
+      }
+    } else {
+      plan=callAI(request);
+    }
     if(!requestId.equals(plan.request_id())) throw new Api.Failure(502,"Phản hồi AI không khớp yêu cầu");
-    return executePlan(conversationId,datasetId,message,plan,actor,recentResult);
+    if(target.isPresent() && !Set.of("dashboard_action","clarify").contains(plan.intent())) {
+      plan=new AIResponse(requestId,"clarify",null,null,null,null,null,null,
+          "Chat chưa xác định được thao tác trên dashboard. Hãy nêu rõ KPI, điều kiện lọc hoặc định dạng xuất.",null);
+    }
+    return executePlan(conversationId,datasetId,message,plan,actor,recentResult,target.orElse(null),requested);
   }
   AIResponse callAI(Map<String,Object> body) {
     try {
@@ -161,9 +187,10 @@ public class Chat {
   }
   // Invoked inside sendMessage's transaction: any failed chart/message rolls back the entire turn.
   Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor) {
-    return executePlan(conversationId,datasetId,message,plan,actor,"");
+    return executePlan(conversationId,datasetId,message,plan,actor,"",null,Set.of());
   }
-  private Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor,String recentResult) {
+  private Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor,
+      String recentResult,ChatDashboardActions.Target target,Set<String> requested) {
     auth.canEdit(actor);
     if("create_dashboard".equals(plan.intent()) && !requestsDashboard(message)) {
       plan=new AIResponse(plan.request_id(),"clarify",null,null,null,null,null,null,
@@ -230,18 +257,21 @@ public class Chat {
         extra.put("chart_count",ids.size());
       } else throw Api.bad("AI chưa chọn cách tạo dashboard");
       if(plan.dashboard_filters()!=null && !plan.dashboard_filters().isEmpty()) {
-        List<Map<String,Object>> scope=new ArrayList<>();
-        for(var filter:plan.dashboard_filters()) {
-          if(!Set.of("column","op","value","end").containsAll(filter.keySet()))throw Api.bad("Bộ lọc dashboard không hợp lệ");
-          var entry=new LinkedHashMap<>(filter);entry.put("datasetId",datasetId.toString());scope.add(entry);
-        }
+        var scope=scopedFilters(mapper.valueToTree(plan.dashboard_filters()),datasetId,mapper);
         dashboards.saveScope(dashboardId,scope,actor);
         extra.put("dashboard_filters",scope);
       }
-      answer="Đã tạo dashboard \""+name+"\". Các biểu đồ hiển thị ngay bên dưới; mở dashboard đầy đủ để lọc hoặc chỉnh bố cục.";
+      answer="Đã tạo dashboard \""+name+"\". Bạn có thể yêu cầu thêm KPI, lọc hoặc xuất file ngay trong Chat.";
       extra.put("dashboard_id",dashboardId.toString());
       extra.put("dashboard_name",name);
       result.put("dashboard_id",dashboardId.toString());
+    } else if("dashboard_action".equals(plan.intent())) {
+      if(target==null || requested.isEmpty()) throw Api.bad("Hãy gửi yêu cầu rõ ràng cho dashboard trong hội thoại này");
+      var outcome=dashboardActions.apply(target,datasetId,plan.dashboard_action(),requested,actor);
+      answer=outcome.answer();
+      extra.put("dashboard_id",target.id().toString());
+      result.put("dashboard_id",target.id().toString());
+      if(!outcome.format().isEmpty()) extra.put("dashboard_export",outcome.format());
     } else if("clarify".equals(plan.intent())) {
       answer=bounded(plan.clarification(),2000,"Câu hỏi làm rõ");
     } else throw Api.bad("AI trả loại yêu cầu không được hỗ trợ");
@@ -285,9 +315,24 @@ public class Chat {
       +"chi hoi cach|cach|lam sao de|huong dan(?: cach)?|giai thich cach|neu toi noi|tai sao|vi sao|"
       +"do not|don t|how to|how do i|why did you)(?: (?:hay|giup|tui|toi|minh|ban|lai)){0,4} "+CREATE_DASHBOARD+"\\b");
   static boolean requestsDashboard(String message) {
-    String normalized=Normalizer.normalize(message.toLowerCase(Locale.ROOT),Normalizer.Form.NFD)
-        .replaceAll("\\p{M}+", "").replace('đ','d').replaceAll("[^a-z0-9]+", " ").strip();
+    String normalized=normalizedWords(message);
     return DASHBOARD_REQUEST.matcher(normalized).find() && !DASHBOARD_NON_REQUEST.matcher(normalized).find();
+  }
+  static String normalizedWords(String message) {
+    return Normalizer.normalize(message.toLowerCase(Locale.ROOT),Normalizer.Form.NFD)
+        .replaceAll("\\p{M}+", "").replace('đ','d').replaceAll("[^a-z0-9]+", " ").strip();
+  }
+  static List<Map<String,Object>> scopedFilters(JsonNode filters,UUID datasetId,ObjectMapper mapper) {
+    if(!filters.isArray() || filters.size()>12) throw Api.bad("Cần danh sách tối đa 12 bộ lọc");
+    var scope=new ArrayList<Map<String,Object>>();
+    for(var filter:filters) {
+      if(!filter.isObject()) throw Api.bad("Bộ lọc dashboard không hợp lệ");
+      Map<String,Object> entry=mapper.convertValue(filter,new com.fasterxml.jackson.core.type.TypeReference<>() {});
+      if(!Set.of("column","op","value","end").containsAll(entry.keySet()))throw Api.bad("Bộ lọc dashboard không hợp lệ");
+      entry.put("datasetId",datasetId.toString());
+      scope.add(entry);
+    }
+    return scope;
   }
   static List<Map<String,Object>> customSpecs(List<Map<String,Object>> proposed,UUID datasetId) {
     if(proposed==null || proposed.size()<2 || proposed.size()>4) throw Api.bad("Dashboard custom cần từ 2 đến 4 biểu đồ");

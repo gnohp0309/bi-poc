@@ -14,6 +14,7 @@ parser.add_argument('--base-url', default='http://127.0.0.1:18086/api')
 parser.add_argument('--output', type=Path, default=REPO / '.local/chat-first-acceptance')
 parser.add_argument('--case', action='append', help='Run a named case; repeat to select several')
 parser.add_argument('--conversation', action='store_true', help='Run the multi-turn conversational acceptance scenario')
+parser.add_argument('--dashboard-actions', action='store_true', help='Run create, update, filter, and export in the same conversation')
 args = parser.parse_args()
 ROOT = args.output
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -189,12 +190,58 @@ def check_conversation(dataset, token):
     print('CONVERSATION PASS: Gemini interpretation, grounded comparison, read-only chart, and explicit new dashboard.', flush=True)
 
 
+def check_dashboard_actions(dataset, token):
+    conversation = request('/chat/conversations', {'datasetId': dataset, 'title': 'Dashboard qua Chat'}, token)['id']
+    results = []
+
+    def ask(question, conversation_id=conversation):
+        response = request('/chat/message', {'conversationId': conversation_id, 'message': question}, token)
+        results.append({'question': question, 'response': response})
+        (ROOT / 'dashboard-actions.json').write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf-8')
+        print(question, response['intent'], flush=True)
+        return response
+
+    created = ask('Tạo dashboard doanh thu tháng 3 năm 2025.')
+    dashboard = created['dashboard_id']
+    path = '/dashboards/' + dashboard
+    initial = request(path, token=token)
+    ids = {d['id'] for d in request('/dashboards', token=token)}
+    updated = ask('Thêm KPI tổng doanh thu vào dashboard vừa tạo và lọc chi nhánh A.')
+    assert updated['intent'] == 'dashboard_action' and updated['dashboard_id'] == dashboard, updated
+    detail = request(path, token=token)
+    assert len(detail['charts']) == len(initial['charts']) + 1, detail['charts']
+    assert {c['id'] for c in initial['charts']} < {c['id'] for c in detail['charts']}
+    kpi = next(c for c in detail['charts'] if c['chartType'] == 'kpi')
+    assert kpi['rows'][0]['value'] == 6900, kpi
+    assert any(f['column'] == 'c_branch' and f['value'] == 'A' for f in detail['scopeFilters']), detail['scopeFilters']
+    assert any(f['column'] == 'c_date' and f['value'] == '2025-03-01' and f['end'] == '2025-03-31'
+               for f in detail['scopeFilters']), detail['scopeFilters']
+    drill = request(f"{path}/charts/{kpi['id']}/drill", {'filters': []}, token)
+    assert len(drill['rows']) == 20 and sum(row['c_revenue'] for row in drill['rows']) == 6900
+
+    exported = ask('Xuất dashboard vừa tạo ra Excel.')
+    assert exported['intent'] == 'dashboard_action' and exported['dashboard_id'] == dashboard, exported
+    saved = request('/chat/conversations/' + conversation, token=token)
+    assert json.loads(saved['messages'][-1]['metadata_json'])['dashboard_export'] == 'xlsx'
+    assert {d['id'] for d in request('/dashboards', token=token)} == ids
+
+    other = request('/chat/conversations', {'datasetId': dataset, 'title': 'Không có dashboard'}, token)['id']
+    denied = ask('Thêm KPI tổng doanh thu vào dashboard vừa tạo và lọc chi nhánh B.', other)
+    assert denied['intent'] == 'clarify' and 'dashboard_id' not in denied, denied
+    assert request(path, token=token)['scopeFilters'] == detail['scopeFilters']
+    print('DASHBOARD ACTIONS PASS: same dashboard, 6900, 20 rows, Excel action, isolated conversations.', flush=True)
+
+
 if __name__ == '__main__':
     token=request('/auth/login',{'username':'admin','password':'Demo2026!'})['token']
     dataset=setup(token);results=[]
     (ROOT/'dataset.txt').write_text(dataset)
     if args.conversation:
         try: check_conversation(dataset,token)
+        finally: request('/auth/logout',{},token)
+        raise SystemExit(0)
+    if args.dashboard_actions:
+        try: check_dashboard_actions(dataset,token)
         finally: request('/auth/logout',{},token)
         raise SystemExit(0)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:

@@ -130,7 +130,12 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
       // Reload conversation to get updated messages
       await openConversation(selectedConv.id)
       await loadConversations() // Update list timestamps
-      if (response.dashboard_id) done('Đã tạo dashboard từ hội thoại.')
+      if (response.dashboard_id) {
+        const updated = response.dashboard_id
+        setDashboardVersions(versions => ({ ...versions, [updated]: (versions[updated] ?? 0) + 1 }))
+        if (dashboardId) setDashboardId(updated)
+        if (response.intent === 'create_dashboard') done('Đã tạo dashboard từ hội thoại.')
+      }
     } catch (e) {
       setStatus(errorText(e))
       setMessage(userMessage) // Restore message on error
@@ -234,7 +239,7 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
                       <small>{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</small>
                     </div>
                     {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json}
-                      datasetId={selectedConv.dataset_id} onOpenReport={setReportDatasetId}
+                      datasetId={selectedConv.dataset_id} datasets={datasets} onOpenReport={setReportDatasetId}
                       openDashboard={openDashboard} dashboardVersions={dashboardVersions} />
                       : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
                   </div>
@@ -270,8 +275,8 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
       </section>
 
       {reportDatasetId && <ExplorationReportDialog datasetId={reportDatasetId} onClose={() => setReportDatasetId(null)} />}
-      {dashboardId && <ChatDashboardPanel key={dashboardId} id={dashboardId} datasets={datasets} charts={charts}
-        canEdit={canEdit} onClose={closeDashboard} onDeleted={() => setDashboardId(null)} leaveGuard={leaveDashboard} done={message => {
+      {dashboardId && <ChatDashboardPanel key={`${dashboardId}:${dashboardVersions[dashboardId] ?? 0}`} id={dashboardId} datasets={datasets} charts={charts}
+        onClose={closeDashboard} onDeleted={() => setDashboardId(null)} leaveGuard={leaveDashboard} done={message => {
           setDashboardVersions(versions => ({ ...versions, [dashboardId]: (versions[dashboardId] ?? 0) + 1 }))
           done(message)
         }} />}

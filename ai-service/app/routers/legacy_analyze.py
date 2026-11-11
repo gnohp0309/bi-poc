@@ -66,6 +66,11 @@ class HistoryMessage(StrictModel):
     result_context: str | None = Field(default=None, max_length=1800)
 
 
+class DashboardContext(StrictModel):
+    name: str
+    allowed_actions: list[Literal["add_kpi", "filters", "export_format"]]
+
+
 class AnalyzeRequest(StrictModel):
     request_id: str
     dataset_name: str
@@ -73,6 +78,7 @@ class AnalyzeRequest(StrictModel):
     question: str = Field(min_length=1, max_length=4000)
     conversation_history: list[HistoryMessage] = Field(default_factory=list, max_length=10)
     dashboard_creation_allowed: bool | None = None
+    dashboard_context: DashboardContext | None = None
 
 
 class ChartSpec(StrictModel):
@@ -136,8 +142,20 @@ class DashboardNullFilter(StrictModel):
 
 DashboardFilter = DashboardDateFilter | DashboardValueFilter | DashboardNullFilter
 
+class DashboardKpi(StrictModel):
+    name: str = Field(min_length=1, max_length=120)
+    metric: str
+    aggregate: Literal["sum", "avg", "count"]
+
+
+class DashboardAction(StrictModel):
+    add_kpi: DashboardKpi | None = None
+    filters: list[DashboardFilter] | None = Field(default=None, min_length=1, max_length=12)
+    export_format: Literal["xlsx", "pdf", "png"] | None = None
+
+
 class AIPlan(StrictModel):
-    intent: Literal["query", "create_dashboard", "clarify", "statistical", "explore"]
+    intent: Literal["query", "create_dashboard", "clarify", "statistical", "explore", "dashboard_action"]
     query_config: AnalysisConfig | None = None
     statistics_config: StatisticsConfig | None = None
     useTemplate: bool | None = None
@@ -148,6 +166,7 @@ class AIPlan(StrictModel):
     clarification: str | None = Field(default=None, min_length=1, max_length=2000)
     explanation: str | None = None
     dashboard_filters: list[DashboardFilter] | None = Field(default=None, max_length=12)
+    dashboard_action: DashboardAction | None = None
 
     @model_validator(mode="after")
     def complete_plan(self):
@@ -157,6 +176,8 @@ class AIPlan(StrictModel):
             raise ValueError("query requires query_config")
         if self.intent == "clarify" and not self.clarification:
             raise ValueError("clarify requires clarification")
+        if self.intent == "dashboard_action" and (not self.dashboard_action or not self.dashboard_action.model_dump(exclude_none=True)):
+            raise ValueError("dashboard_action requires a nonempty action")
         if self.intent == "create_dashboard":
             if not self.dashboard_name or self.useTemplate is None:
                 raise ValueError("dashboard requires name and approach")
@@ -205,8 +226,14 @@ class StatisticalDecision(StrictModel):
 class ExploreDecision(StrictModel):
     intent: Literal["explore"]
 
+
+class DashboardActionDecision(StrictModel):
+    intent: Literal["dashboard_action"]
+    dashboard_action: DashboardAction
+
+
 class GeneratedPlan(StrictModel):
-    decision: QueryDecision | TemplateDecision | CustomDecision | ClarifyDecision | StatisticalDecision | ExploreDecision
+    decision: QueryDecision | TemplateDecision | CustomDecision | ClarifyDecision | StatisticalDecision | ExploreDecision | DashboardActionDecision
 
 
 def build_prompt(request: AnalyzeRequest) -> str:
@@ -288,13 +315,33 @@ Ví dụ "Hãy tìm các giá trị ngoại lệ trong dataset" -> statistical, 
 Chỉ dùng operation=outlier khi người dùng chỉ định cột. Nếu quá giới hạn số cột thì clarify để chọn phạm vi; không âm thầm bỏ cột.
 """
     instructions += "\nQUY TẮC MÃ HÓA: statistics_config là CHUỖI JSON chứa object cấu hình. charts và dashboard_filters là CHUỖI JSON chứa mảng cấu hình. Không trả object/mảng trực tiếp ở ba trường này. Một bộ lọc date phải có column,op,value,end trong CÙNG một object, cả value và end là ngày YYYY-MM-DD ngắn gọn. Backend giải mã và kiểm tra kiểu đầy đủ. Các trường khác giữ nguyên.\n"
+    if request.dashboard_context:
+        instructions += r"""
+Yêu cầu hiện tại thao tác dashboard đã tạo trong hội thoại. Đọc dashboard_context.name và
+dashboard_context.allowed_actions. Dùng intent dashboard_action với dashboard_action là chuỗi
+chứa một JSON object gồm đúng các khóa đã được cho phép. Không chọn create_dashboard.
+add_kpi={name,metric,aggregate}; metric là tên cột thật, aggregate là sum/avg/count.
+filters=[{column,op,value,end?}]; op là eq/null/date; ngày dùng YYYY-MM-DD. Dùng đúng giá trị
+người dùng nói, ví dụ chi nhánh A là "A", cột chi nhánh thường là c_branch.
+export_format là xlsx (Excel), pdf hoặc png. Chọn đúng định dạng được yêu cầu.
+Nếu người dùng nhắc dashboard khác tên đang cung cấp, thiếu cột hoặc ý định mơ hồ, trả clarify.
+Ví dụ "thêm KPI tổng doanh thu và lọc chi nhánh A" với c_revenue/c_branch:
+{"decision":{"intent":"dashboard_action","dashboard_action":"{\"add_kpi\":{\"name\":\"Tổng doanh thu\",\"metric\":\"c_revenue\",\"aggregate\":\"sum\"},\"filters\":[{\"column\":\"c_branch\",\"op\":\"eq\",\"value\":\"A\"}]}"}}
+"""
     return instructions + "\nINPUT_JSON:\n" + request.model_dump_json(exclude_none=True)
 
 
-def provider_schema() -> dict:
+def provider_schema(allow_dashboard_action: bool = False) -> dict:
     # Bound provider grammar complexity; decoded JSON still passes strict validation.
     schema=GeneratedPlan.model_json_schema()
     definitions=schema["$defs"]
+    decisions=schema["properties"]["decision"]["anyOf"]
+    action_ref={"$ref":"#/$defs/DashboardActionDecision"}
+    if allow_dashboard_action:
+        decisions[:]=[action_ref,{"$ref":"#/$defs/ClarifyDecision"}]
+        definitions["DashboardActionDecision"]["properties"]["dashboard_action"]={"type":"string","description":"JSON object containing all requested dashboard actions"}
+    else:
+        decisions.remove(action_ref)
     definitions["CustomDecision"]["properties"]["charts"]={"type":"string","description":"JSON array of 2 to 4 chart configurations"}
     definitions["StatisticalDecision"]["properties"]["statistics_config"]={"type":"string","description":"JSON object with operation and applicable parameters"}
     for name in ("TemplateDecision", "CustomDecision"):
@@ -377,7 +424,7 @@ def generate_plan(request: AnalyzeRequest) -> AIPlan:
             automatic_continuation=False,
             generation_config={"max_output_tokens":4096},
             response_format={"type": "text", "mime_type": "application/json",
-                             "schema": provider_schema()},
+                             "schema": provider_schema(request.dashboard_context is not None)},
         )
     decoded=json.loads(response.output_text)
     decision=decoded.get("decision",{})
@@ -385,7 +432,7 @@ def generate_plan(request: AnalyzeRequest) -> AIPlan:
         # Some provider responses use the field name as the clarification intent.
         # This alias cannot execute queries; all fields still pass strict validation.
         if decision.get("intent")=="clarification":decision["intent"]="clarify"
-        for field in ("charts","statistics_config","dashboard_filters"):
+        for field in ("charts","statistics_config","dashboard_filters","dashboard_action"):
             if isinstance(decision.get(field),str):decision[field]=json.loads(decision[field])
     generated = GeneratedPlan.model_validate(decoded)
     return keep_insight_focus(AIPlan.model_validate(generated.decision.model_dump(exclude_none=True)), request)

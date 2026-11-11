@@ -15,6 +15,16 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ChatTests {
+  @Test void dashboardFollowUpsRequireRequestedOperations() {
+    assertEquals(java.util.Set.of("add_kpi","filters"),
+        ChatDashboardActions.requestedActions("Thêm KPI tổng doanh thu vào dashboard vừa tạo và lọc chi nhánh A."));
+    assertEquals(java.util.Set.of("export_format"),
+        ChatDashboardActions.requestedActions("Xuất dashboard vừa tạo ra Excel."));
+    assertEquals(java.util.Set.of("xlsx","pdf"),ChatDashboardActions.exportFormats("Xuất Excel hoặc PDF"));
+    assertTrue(ChatDashboardActions.requestedActions("Cho tui xem doanh thu dashboard, lọc chi nhánh A trong kết quả.").isEmpty());
+    assertTrue(ChatDashboardActions.requestedActions("Đừng thêm KPI vào dashboard.").isEmpty());
+    assertTrue(ChatDashboardActions.requestedActions("Hướng dẫn cách xuất dashboard ra Excel.").isEmpty());
+  }
   private final JdbcTemplate db=mock(JdbcTemplate.class);
   private final Datasets datasets=mock(Datasets.class);
   private final DatasetAnalysis analysis=mock(DatasetAnalysis.class);

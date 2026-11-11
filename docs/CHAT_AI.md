@@ -29,9 +29,10 @@ Chỉ phần chat cần FastAPI/Gemini key. SQL Lab, CSV, Chart Builder và dash
 2. Chọn dataset, bấm **Tạo cuộc hội thoại mới**.
 3. Với orders mẫu, hỏi “Tổng doanh thu là bao nhiêu?”, “Doanh thu theo vùng”, rồi “Còn trung bình?”.
 4. Hỏi “Tạo dashboard tổng quan doanh thu”. Nếu có đủ ngày/doanh thu/vùng/danh mục, AI chọn sales-overview.
-5. Các biểu đồ hiện ngay dưới tin nhắn tạo dashboard, trong cùng khung chat. Bấm **Mở dashboard đầy đủ** khi cần lọc/chỉnh bố cục. Mở lại hội thoại cũ vẫn tải các biểu đồ từ dashboard đã lưu, không gọi lại Gemini. Nếu dashboard đã bị xóa hoặc nguồn lỗi, chat hiển thị thông báo và nút tải lại thay vì mất nội dung hội thoại.
-6. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
-7. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
+5. Các biểu đồ hiện ngay dưới tin nhắn tạo dashboard. Trong cùng hội thoại, gửi “Thêm KPI tổng doanh thu vào dashboard vừa tạo và lọc chi nhánh A” (hoặc chọn một giá trị có trong dataset). Chat thêm KPI và lưu điều kiện lọc cho dashboard gần nhất của hội thoại trong một giao dịch.
+6. Gửi “Xuất dashboard vừa tạo ra Excel” (hoặc PDF, PNG), rồi tải file từ phản hồi. File lấy từ dữ liệu đang hiển thị trong phản hồi lúc tải. Khung **Mở dashboard trong Chat** dùng để xem báo cáo và drill-down. Mở lại hội thoại sẽ tải biểu đồ từ dashboard đã lưu.
+7. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
+8. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
 
 Viewer chỉ đọc danh sách/lịch sử hội thoại của mình; không tạo/xóa hội thoại hoặc gửi yêu cầu phân tích. Không chia sẻ hội thoại giữa các tài khoản.
 
@@ -84,6 +85,8 @@ query_config dùng đúng [DATA_ANALYSIS](DATA_ANALYSIS.md): tối đa 3 chiều
 Intent create_dashboard dùng dashboard_name, useTemplate=true, templateId, mapping theo [DASHBOARD_TEMPLATES](DASHBOARD_TEMPLATES.md); hoặc useTemplate=false, charts từ 2–4 cấu hình {name,chartType,dimension,metric,aggregate,timeGrain?}. Không cho biểu đồ tự đổi dataset. Kiểm tra toàn bộ trước khi lưu, và rollback cả chart/dashboard/message nếu có lỗi lưu.
 
 Intent clarify dùng clarification. Câu trả lời **query** được dựng từ các dòng kết quả thật, không dùng nội dung số liệu AI tự viết. Số BigDecimal giữ phần lẻ/độ chính xác; NULL hiển thị NULL. metadata_json của tin nhắn lưu dữ liệu kết quả hoặc dashboard_id để mở lại.
+
+Intent `dashboard_action` hỗ trợ `add_kpi`, `filters` và `export_format`. Đích lấy từ hội thoại và kiểm tra quyền sở hữu ở backend. Điều kiện lọc mới thay điều kiện đã lưu trên cùng cột, còn điều kiện của cột khác vẫn áp dụng. Yêu cầu xuất đơn lẻ lấy định dạng từ câu người dùng và trả nút tải qua metadata `dashboard_export`. Test luồng này bằng `python dev/smoke-chat-first.py --live --dashboard-actions` trên môi trường thử.
 
 Ở giao tiếp nội bộ với Gemini, kết quả được bọc trong decision và có schema riêng cho query, template, custom, clarify. Mỗi nhánh bắt buộc đủ trường ngay khi sinh JSON; template cần tên/cách tạo/mẫu/ánh xạ, custom cần tên/cách tạo/2–4 biểu đồ. FastAPI chuẩn hóa lại thành response phẳng ở trên, nên frontend/Spring Boot không đổi hợp đồng.
 
