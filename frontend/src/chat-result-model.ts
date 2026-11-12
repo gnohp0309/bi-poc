@@ -15,7 +15,7 @@ export type AnalysisResult = {
   warnings: string[]; conclusion?: string; reason?: string; data?: ResultTable; charts: ChartData[]
   provenance?: { engine?: string; version?: string; sampled?: boolean; sampleSize?: ResultValue; missingPolicy?: string; scope?: string }
 }
-export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; dashboardId?: string; dashboardExport?: DashboardExportFormat; explorationDatasetId?: string; problems: string[] }
+export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; dashboardId?: string; dashboardExport?: DashboardExportFormat; explorationDatasetId?: string; canVerify?: boolean; problems: string[] }
 type Obj = Record<string, unknown>
 const object = (v: unknown): v is Obj => v !== null && typeof v === 'object' && !Array.isArray(v)
 const string = (v: unknown): string | undefined => typeof v === 'string' && v.trim() ? v : undefined
@@ -54,6 +54,7 @@ export function parseChatResult(metadataJson: string): ParsedChatResult {
   try { metadata = JSON.parse(metadataJson) } catch { return { problems: ['Không đọc được dữ liệu kết quả đã lưu. Nội dung tin nhắn vẫn được giữ.'] } }
   if (!object(metadata)) return { problems: ['Metadata kết quả không đúng định dạng.'] }
   if (uuid(metadata.dashboard_id)) parsed.dashboardId = metadata.dashboard_id
+  if (object(metadata.query_config) || parsed.dashboardId && !metadata.dashboard_export) parsed.canVerify = true
   if (parsed.dashboardId && metadata.intent === 'dashboard_action' && member(metadata.dashboard_export, ['xlsx', 'pdf', 'png'] as const)) {
     parsed.dashboardExport = metadata.dashboard_export
   }

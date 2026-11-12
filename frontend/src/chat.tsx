@@ -240,6 +240,7 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
                     </div>
                     {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json}
                       datasetId={selectedConv.dataset_id} datasets={datasets} onOpenReport={setReportDatasetId}
+                      verification={canEdit ? { conversationId: selectedConv.id, messageId: msg.id } : undefined}
                       openDashboard={openDashboard} dashboardVersions={dashboardVersions} />
                       : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
                   </div>

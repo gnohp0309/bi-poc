@@ -294,8 +294,10 @@ public class Chat {
     }
     extra.put("intent",plan.intent());
     UUID assistantId=UUID.randomUUID();
+    UUID questionId=UUID.randomUUID();
+    extra.put("question_id",questionId.toString());
     try {
-      db.update("INSERT INTO chat_messages(id,conversation_id,role,content) VALUES (?,?,'user',?)",UUID.randomUUID(),conversationId,message);
+      db.update("INSERT INTO chat_messages(id,conversation_id,role,content) VALUES (?,?,'user',?)",questionId,conversationId,message);
       db.update("INSERT INTO chat_messages(id,conversation_id,role,content,metadata_json) VALUES (?,?,'assistant',?,?)",
           assistantId,conversationId,answer,mapper.writeValueAsString(extra));
     } catch(com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Cannot save chat result",e); }
