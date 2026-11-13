@@ -1,6 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseChatResult, parseResultTable, formatResultValue } from '../frontend/src/chat-result-model.ts'
+import { describeScalarAnswer, parseChatResult, parseResultTable, formatResultValue } from '../frontend/src/chat-result-model.ts'
+
+test('summarizes a saved scalar using its executed value without rounding or confusing NULL with zero', () => {
+  const metadata = {
+    query_config: { metrics: [{ aggregate: 'sum', column: 'c_revenue', alias: 'answer' }] },
+    data: { columns: ['answer'], rows: [{ answer: '9007199254740993.12' }] },
+  }
+  const scalar = parseChatResult(JSON.stringify(metadata)).scalar
+  assert.deepEqual(describeScalarAnswer(scalar, '{"c_revenue":"revenue"}'), { label: 'Tổng doanh thu', value: '9.007.199.254.740.993,12' })
+  for (const answer of [null, 0]) {
+    metadata.data.rows[0].answer = answer
+    const parsed = parseChatResult(JSON.stringify(metadata))
+    assert.equal(describeScalarAnswer(parsed.scalar).value, answer === null ? null : '0')
+  }
+  metadata.query_config.groupBy = [{ column: 'c_branch' }]
+  assert.equal(parseChatResult(JSON.stringify(metadata)).scalar, undefined)
+  delete metadata.query_config.groupBy
+  metadata.data.truncated = true
+  assert.equal(parseChatResult(JSON.stringify(metadata)).scalar, undefined)
+})
 
 const parse = r => parseChatResult(JSON.stringify({ analysis_result: { schemaVersion: 1, kind: 'statistical_test', status: 'success', ...r } }))
 

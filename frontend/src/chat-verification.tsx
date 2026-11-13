@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { api } from './api'
+import { formatChatNumber } from './chat-result-model'
 
 type Filter = { column: string; operator: string; value: string | number | boolean | null }
 type Scope = { column: string; aggregate: string; filters: Filter[] }
@@ -20,6 +21,12 @@ const labels = {
   scope_mismatch: 'Không khớp phạm vi',
   insufficient: 'Chưa đủ căn cứ',
 }
+const shortLabels = {
+  match: 'Đã kiểm chứng',
+  value_mismatch: 'Sai số liệu',
+  scope_mismatch: 'Sai phạm vi',
+  insufficient: 'Chưa đủ căn cứ',
+}
 const aggregates: Record<string, string> = { sum: 'Tổng', avg: 'Trung bình', count: 'Đếm' }
 const operators: Record<string, string> = { eq: '=', gte: '≥', gt: '>', lte: '≤', lt: '<', ne: '≠', is_null: 'là NULL', is_not_null: 'khác NULL' }
 
@@ -30,18 +37,29 @@ function scopeText(scope: Scope) {
   )].join(' · ')
 }
 
-function numberText(value: string | null) {
-  if (value === null) return '—'
-  const [integer, fraction] = value.split('.')
-  return integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (fraction ? ',' + fraction : '')
-}
-
 export function ChatVerification({ conversationId, messageId, dashboard }: {
   conversationId: string; messageId: string; dashboard: boolean
 }) {
   const [result, setResult] = useState<Verification | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+
+  useEffect(() => {
+    if (!open) return
+    const dialog = panel.current
+    dialog?.showModal()
+    return () => dialog?.close()
+  }, [open])
+
+  function closePanel() {
+    panel.current?.close()
+    setOpen(false)
+    trigger.current?.focus({ preventScroll: true })
+  }
 
   async function verify() {
     setPending(true)
@@ -56,22 +74,44 @@ export function ChatVerification({ conversationId, messageId, dashboard }: {
     }
   }
 
-  return <div className="chat-result-section">
-    <button type="button" className="secondary-button" disabled={pending} onClick={verify}>
-      {pending ? 'Đang kiểm tra…' : dashboard ? 'Kiểm tra KPI hiện tại' : 'Kiểm tra câu trả lời'}
+  return <div className="chat-verification-action">
+    <button type="button" className="chat-verify-button" ref={trigger} aria-haspopup="dialog"
+      onClick={() => { setOpen(true); if (!pending) void verify() }}>
+      {dashboard ? 'Kiểm chứng KPI' : 'Kiểm chứng'}
     </button>
-    <div aria-live="polite" aria-atomic="true">
-      {error && <p className="chat-result-warning">{error}</p>}
-      {result && <div className="chat-result-section">
-        <p><strong>{labels[result.status]}</strong> · {result.reason}</p>
-        {result.expected && result.actual && <dl className="chat-result-facts">
-          <div><dt>Phạm vi yêu cầu</dt><dd>{scopeText(result.expected)}</dd></div>
-          <div><dt>Phạm vi đã dùng</dt><dd>{scopeText(result.actual)}</dd></div>
-          <div><dt>{dashboard ? 'KPI hiện tại' : 'Số đã trả'}</dt><dd>{numberText(result.answerValue)}</dd></div>
-          <div><dt>Tính lại từ {result.dataset}</dt><dd>{numberText(result.computedValue)}
-            {result.matchingRows !== null && <small> từ {result.matchingRows.toLocaleString('vi-VN')} dòng</small>}</dd></div>
-        </dl>}
-      </div>}
-    </div>
+    {result && <span className={`chat-verify-status ${result.status}`}>{shortLabels[result.status]}</span>}
+    {open && <dialog ref={panel} className="chat-verification-panel" aria-labelledby={titleId}
+      onCancel={event => { event.preventDefault(); closePanel() }}
+      onClick={event => { if (event.target === event.currentTarget) closePanel() }}>
+      <div className="chat-verification-panel-inner">
+        <header className="chat-verification-panel-header">
+          <h2 id={titleId}>{dashboard ? 'Kiểm chứng KPI hiện tại' : 'Kiểm chứng câu trả lời'}</h2>
+          <button type="button" className="text-link" onClick={closePanel}>Đóng</button>
+        </header>
+        <div className="chat-verification-panel-body">
+          <div role="status">
+            {pending && <p>Đang tính lại từ dữ liệu…</p>}
+            {error && <p className="chat-result-warning">{error}</p>}
+            {result && <>
+              <span className={`chat-verify-status ${result.status}`}>{labels[result.status]}</span>
+              <p className="chat-verify-reason">{result.reason}</p>
+            </>}
+          </div>
+          {error && <button type="button" className="secondary-button" onClick={verify}>Thử lại</button>}
+          {result && <>
+            {result.dataset && <p className="chat-verify-source">Dữ liệu · {result.dataset}</p>}
+            {(result.answerValue !== null || result.computedValue !== null) && <dl className="chat-verify-values">
+              <div><dt>{dashboard ? 'KPI hiện tại' : 'Số đã trả'}</dt><dd>{formatChatNumber(result.answerValue)}</dd></div>
+              <div><dt>Tính lại từ dữ liệu</dt><dd>{formatChatNumber(result.computedValue)}</dd>
+                {result.matchingRows !== null && <small>{result.matchingRows.toLocaleString('vi-VN')} dòng phù hợp</small>}</div>
+            </dl>}
+            {(result.expected || result.actual) && <dl className="chat-verify-scopes">
+              {result.expected && <div><dt>Phạm vi yêu cầu</dt><dd>{scopeText(result.expected)}</dd></div>}
+              {result.actual && <div><dt>Phạm vi đã dùng</dt><dd>{scopeText(result.actual)}</dd></div>}
+            </dl>}
+          </>}
+        </div>
+      </div>
+    </dialog>}
   </div>
 }
