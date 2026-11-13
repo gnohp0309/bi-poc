@@ -24,20 +24,22 @@ public class Statistics {
     this.datasets=datasets;this.analysis=analysis;this.connections=connections;this.auth=auth;this.mapper=mapper;this.aiUrl=aiUrl;this.secret=secret;
   }
   record Plan(String operation,Map<String,Object> parameters,List<String> columns) {}
-  static final Set<String> METHODS=Set.of("descriptive","correlation","outlier","shapiro_wilk","independent_ttest","paired_ttest","anova","chi_square","mann_whitney","kruskal_wallis");
+  static final Set<String> METHODS=Set.of("descriptive","correlation","outlier","shapiro_wilk","independent_ttest","paired_ttest","anova","chi_square","mann_whitney","kruskal_wallis","auto_compare","insights");
   static Plan validate(JsonNode config,DatasetAnalysis.Metadata metadata) {
     if(config==null || !config.isObject())throw Api.bad("Cần cấu hình thống kê");
     String op=config.path("operation").asText();if(!METHODS.contains(op))throw Api.bad("Phương pháp thống kê không hỗ trợ");
     Set<String> fields=new HashSet<>(List.of("operation"));
-    if(Set.of("descriptive","correlation").contains(op))fields.add("columns");
+    if(Set.of("descriptive","correlation","insights").contains(op))fields.add("columns");
+    if(op.equals("insights"))fields.addAll(List.of("date_column","months","exclude_outliers"));
+    if(op.equals("auto_compare"))fields.add("independent");
     if(Set.of("outlier","shapiro_wilk").contains(op))fields.add("column");
-    if(Set.of("independent_ttest","anova","mann_whitney","kruskal_wallis").contains(op))fields.addAll(List.of("value_column","group_column","group_values"));
+    if(Set.of("independent_ttest","anova","mann_whitney","kruskal_wallis","auto_compare").contains(op))fields.addAll(List.of("value_column","group_column","group_values"));
     if(op.equals("paired_ttest"))fields.addAll(List.of("column_before","column_after"));
     if(op.equals("chi_square"))fields.addAll(List.of("column1","column2"));
     if(Set.of("outlier","correlation").contains(op))fields.add("method");
     if(op.equals("outlier"))fields.add("threshold");
     if(op.equals("independent_ttest"))fields.add("equal_variance");
-    if(!Set.of("descriptive","correlation","outlier").contains(op))fields.add("alpha");
+    if(!Set.of("descriptive","correlation","outlier","insights").contains(op))fields.add("alpha");
     var it=config.fieldNames();while(it.hasNext())if(!fields.contains(it.next()))throw Api.bad("Thuộc tính thống kê không hợp lệ");
     Map<String,DatasetAnalysis.Column> known=new LinkedHashMap<>();metadata.columns().forEach(c->known.put(c.name(),c));
     Map<String,Object> p=new LinkedHashMap<>();LinkedHashSet<String> selected=new LinkedHashSet<>();
@@ -50,6 +52,31 @@ public class Statistics {
     for(String key:List.of("column","value_column","group_column","column_before","column_after","column1","column2"))if(fields.contains(key)) {
       JsonNode name=config.path(key);boolean numeric=!Set.of("group_column","column1","column2").contains(key);
       checkColumn(name,known,numeric);selected.add(name.asText());p.put(key,name.asText());
+    }
+    if(config.has("date_column")) {
+      var date=config.get("date_column");checkColumn(date,known,false);
+      if(!known.get(date.asText()).kind().equals("date"))throw Api.bad("Cột thời gian phải có kiểu ngày");
+      selected.add(date.asText());p.put("date_column",date.asText());
+    }
+    if(config.has("months")) {
+      var months=config.get("months");
+      if(!p.containsKey("date_column") || !months.isArray() || months.isEmpty() || months.size()>12)
+        throw Api.bad("Chọn 1–12 tháng và cột ngày để so sánh");
+      Set<String> periods=new TreeSet<>();
+      for(var month:months) {
+        if(!month.isTextual() || !month.asText().matches("[1-9][0-9]{3}-(0[1-9]|1[0-2])") || !periods.add(month.asText()))
+          throw Api.bad("Tháng cần đúng YYYY-MM và không trùng nhau");
+      }
+      p.put("months",new ArrayList<>(periods));
+    }
+    if(config.has("exclude_outliers")) {
+      if(!config.get("exclude_outliers").isBoolean() || !p.containsKey("date_column"))
+        throw Api.bad("Phân tích theo thời gian bỏ ngoại lệ cần cột ngày và tùy chọn đúng/sai");
+      p.put("exclude_outliers",config.get("exclude_outliers").asBoolean());
+    }
+    if(config.has("independent")) {
+      if(!config.get("independent").isBoolean())throw Api.bad("independent phải là boolean");
+      p.put("independent",config.get("independent").asBoolean());
     }
     if(selected.size()>10)throw Api.bad("Tối đa 10 cột cho một phân tích");
     if(op.equals("paired_ttest") && Objects.equals(p.get("column_before"),p.get("column_after")))throw Api.bad("Cần hai cột trước/sau khác nhau");

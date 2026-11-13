@@ -3,6 +3,14 @@ import assert from 'node:assert/strict'
 import { parseChatResult, parseResultTable, formatResultValue } from '../frontend/src/chat-result-model.ts'
 
 const parse = r => parseChatResult(JSON.stringify({ analysis_result: { schemaVersion: 1, kind: 'statistical_test', status: 'success', ...r } }))
+
+test('preflight keeps explicit confirmation state without inventing a p-value', () => {
+  const result = parse({kind:'query',status:'needs_confirmation',summary:'Confirm independence',assumptions:[{name:'Independence',status:'not_checked'}]})
+  assert.deepEqual(result.problems, [])
+  assert.equal(result.result.status,'needs_confirmation')
+  assert.equal(result.result.pValue,undefined)
+  assert.equal(result.result.assumptions[0].status,'not_checked')
+})
 test('malformed history is reported without throwing', () => {
   assert.equal(parseChatResult('{oops').problems.length, 1)
   assert.equal(parseChatResult('null').problems.length, 1)
@@ -13,6 +21,13 @@ test('legacy tables remain readable and have no invented statistical metadata', 
   assert.equal(r.table.rows[0].n, 0)
   assert.equal(r.table.rows[1].n, null)
   assert.equal(r.result, undefined)
+})
+test('exploration reports are linked only from saved exploration results with a dataset UUID', () => {
+  const datasetId = '204a35ee-800c-4dc3-8f1f-cf2590eae80d'
+  const exploration = { datasetId }
+  assert.equal(parseChatResult(JSON.stringify({ intent: 'explore', exploration })).explorationDatasetId, datasetId)
+  assert.equal(parseChatResult(JSON.stringify({ intent: 'query', exploration })).explorationDatasetId, undefined)
+  assert.equal(parseChatResult(JSON.stringify({ intent: 'explore', exploration: { datasetId: '../other' } })).explorationDatasetId, undefined)
 })
 test('zero and a missing value stay distinct; small p-values do not round to zero', () => {
   assert.equal(formatResultValue(0), '0')

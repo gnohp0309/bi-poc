@@ -45,7 +45,7 @@ Script nạp `public.orders` và `public.products` vào database `bi_poc_source`
 
 ## Khám phá dữ liệu và thống kê
 
-Có màn hình **Khám phá dữ liệu** để xem profiling, dữ liệu thiếu, trùng lặp, lịch sử sai kiểu CSV và thống kê từng cột. Form phân tích nâng cao chạy SciPy thật trên dataset đã chọn: thống kê mô tả, Pearson/Spearman, IQR/Z-score và bảy kiểm định. Chat AI hỗ trợ gọi cùng luồng và lưu kết quả để mở lại.
+Vào **Chat AI**, chọn dataset rồi mở **Khám phá dataset trong Chat** để xem profiling, dữ liệu thiếu, trùng lặp và sai kiểu CSV. Gửi câu hỏi trong hội thoại để chạy thống kê mô tả, Pearson/Spearman, IQR/Z-score, kiểm định hoặc nhận định từ số liệu thực. Kết quả được lưu cùng hội thoại. Dashboard do Chat tạo có thể mở lại trong Chat để chỉnh sửa, lọc, xem chi tiết, chia sẻ và xuất file.
 
 Xem [hợp đồng tích hợp và giới hạn](docs/EXPLORATION_INTEGRATION.md). File [CSV giả lập có dữ liệu bẩn](demo/exploration_dirty_242.csv) có **242 dòng, 3 ô thiếu và 3 ô sai kiểu lúc nhập, 2 dòng trùng dư, một ngoại lệ doanh thu 999999**. Sau nhập, ô sai kiểu chuyển NULL nên báo cáo hiện tại có 6 ô thiếu. Không tự xóa dòng hoặc sửa dữ liệu gốc.
 

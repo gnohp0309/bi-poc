@@ -10,6 +10,7 @@ import java.util.*;
 @Service
 public class Dashboards {
   private final JdbcTemplate db;private final Charts charts;private final Auth auth;
+  @org.springframework.beans.factory.annotation.Autowired private DashboardInteraction interaction;
   Dashboards(JdbcTemplate db,Charts charts,Auth auth){this.db=db;this.charts=charts;this.auth=auth;}
   public List<Map<String,Object>> list(){
     return db.queryForList("""
@@ -21,6 +22,7 @@ public class Dashboards {
   public Map<String,Object> detail(UUID id,String filter,String filterDimension){
     List<Map<String,Object>> rows=db.queryForList("SELECT id,name,owner_id,share_token,created_at FROM dashboards WHERE id=?",id);
     if(rows.isEmpty()) throw Api.notFound();
+    if(!interaction.savedScope(id).isEmpty())return interaction.query(id,Map.of());
     List<Map<String,Object>> items=db.queryForList("SELECT chart_id,position,grid_x,grid_y,grid_w,grid_h FROM dashboard_charts WHERE dashboard_id=? ORDER BY position",id);
     List<Map<String,Object>> data=new ArrayList<>();
     for(Map<String,Object> item:items){
@@ -48,6 +50,11 @@ public class Dashboards {
     if(db.queryForObject("SELECT count(*) FROM dashboards WHERE id=?",Integer.class,id)==0) throw Api.notFound();
     lock(id);
     var items=DashboardLayout.parse(body);
+    var scope=interaction.savedScope(id);
+    if(!scope.isEmpty())for(var item:items) {
+      String datasetId=charts.definition(item.chartId()).get("datasetId").toString();
+      if(scope.stream().noneMatch(f->datasetId.equals(f.get("datasetId"))))throw Api.bad("Dashboard có phạm vi đã lưu; chỉ thêm biểu đồ từ dataset cùng phạm vi");
+    }
     // Serialize membership changes with chart edits, in a stable lock order.
     items.stream().map(DashboardLayout.Item::chartId).sorted().forEach(chartId->{
       if(db.queryForList("SELECT id FROM charts WHERE id=? FOR UPDATE",chartId).isEmpty())throw Api.notFound();
@@ -60,6 +67,10 @@ public class Dashboards {
   }
   private void lock(UUID id){
     if(db.queryForList("SELECT id FROM dashboards WHERE id=? FOR UPDATE",id).isEmpty())throw Api.notFound();
+  }
+  public void saveScope(UUID id,List<Map<String,Object>> filters,Auth.Actor actor){
+    auth.canEdit(actor);interaction.saveScope(id,filters);
+    auth.audit(actor,"SCOPE","DASHBOARD",id);
   }
   @Transactional
   public void rename(UUID id,Map<String,Object> body,Auth.Actor actor){

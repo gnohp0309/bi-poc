@@ -16,7 +16,7 @@ from app.utils.data_loader import DataLoader
 
 router = APIRouter(tags=['Internal dataset execution'])
 OPERATIONS = Literal['descriptive','correlation','outlier','shapiro_wilk','independent_ttest',
-    'paired_ttest','anova','chi_square','mann_whitney','kruskal_wallis']
+    'paired_ttest','anova','chi_square','mann_whitney','kruskal_wallis','auto_compare','insights']
 
 class ExecutionRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -54,12 +54,19 @@ def execute(request: ExecutionRequest):
         'missingPolicy':'Bỏ NULL và số không hữu hạn; phân tích nhiều biến dùng dòng đầy đủ cho các biến được chọn'}}
     categorical={p.get('group_column'),p.get('column1'),p.get('column2')}
     for name in frame.columns:
+        if name == p.get('date_column'):continue
         if name not in categorical:frame[name]=pd.to_numeric(frame[name],errors='coerce').replace([np.inf,-np.inf],np.nan)
         else:frame[name]=frame[name].map(lambda v:None if isinstance(v,str) and not v.strip() else v)
     if p.get('group_values'):
         frame=frame.loc[frame[p['group_column']].isin(p['group_values'])].copy()
         result['warnings'].append('Chỉ phân tích các nhóm được yêu cầu; total vẫn là số dòng dataset.')
     alpha=float(p.get('alpha',.05))
+    if op in ('auto_compare', 'insights'):
+        from app.engine.exploration_workflows import compare_groups, insights
+        if op == 'insights':return finite(insights(frame,p,result))
+        report=compare_groups(frame,p,result,lambda selected,params: execute(request.model_copy(update={'operation':selected,'parameters':params})))
+        report['sample'].update(total=total,excluded=total-len(frame))
+        return finite(report)
     with DataLoader.bind(request.dataset_id,frame):
         if op=='descriptive':
             rows=finite(DescriptiveEngine.calculate_multi_column_stats(frame,p['columns']))

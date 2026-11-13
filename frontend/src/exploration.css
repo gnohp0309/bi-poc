@@ -14,5 +14,9 @@
 .missing-rate{display:flex;gap:10px;align-items:center}
 .exploration-page progress{width:110px;height:8px;accent-color:#476b62}
 .exploration-page td.exploration-value{white-space:normal;overflow-wrap:anywhere;max-width:400px}
+.exploration-report-dialog{color:#25312d}
+.exploration-report-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.exploration-report-dialog-header h2{margin:0}
+.chat-exploration-button{align-self:flex-start}
 @media(max-width:900px){.exploration-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.exploration-quality-grid,.exploration-stat-grid{grid-template-columns:1fr}.exploration-tabs button{flex:1}.exploration-page .metric-grid{grid-template-columns:1fr}}

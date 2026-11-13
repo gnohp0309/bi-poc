@@ -29,9 +29,10 @@ Chỉ phần chat cần FastAPI/Gemini key. SQL Lab, CSV, Chart Builder và dash
 2. Chọn dataset, bấm **Tạo cuộc hội thoại mới**.
 3. Với orders mẫu, hỏi “Tổng doanh thu là bao nhiêu?”, “Doanh thu theo vùng”, rồi “Còn trung bình?”.
 4. Hỏi “Tạo dashboard tổng quan doanh thu”. Nếu có đủ ngày/doanh thu/vùng/danh mục, AI chọn sales-overview.
-5. Các biểu đồ hiện ngay dưới tin nhắn tạo dashboard, trong cùng khung chat. Bấm **Mở dashboard đầy đủ** khi cần lọc/chỉnh bố cục. Mở lại hội thoại cũ vẫn tải các biểu đồ từ dashboard đã lưu, không gọi lại Gemini. Nếu dashboard đã bị xóa hoặc nguồn lỗi, chat hiển thị thông báo và nút tải lại thay vì mất nội dung hội thoại.
-6. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
-7. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
+5. Các biểu đồ hiện ngay dưới tin nhắn tạo dashboard. Trong cùng hội thoại, gửi “Thêm KPI tổng doanh thu vào dashboard vừa tạo và lọc chi nhánh A” (hoặc chọn một giá trị có trong dataset). Chat thêm KPI và lưu điều kiện lọc cho dashboard gần nhất của hội thoại trong một giao dịch.
+6. Gửi “Xuất dashboard vừa tạo ra Excel” (hoặc PDF, PNG), rồi tải file từ phản hồi. File lấy từ dữ liệu đang hiển thị trong phản hồi lúc tải. Khung **Mở dashboard trong Chat** dùng để xem báo cáo và drill-down. Mở lại hội thoại sẽ tải biểu đồ từ dashboard đã lưu.
+7. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
+8. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
 
 Viewer chỉ đọc danh sách/lịch sử hội thoại của mình; không tạo/xóa hội thoại hoặc gửi yêu cầu phân tích. Không chia sẻ hội thoại giữa các tài khoản.
 
@@ -85,11 +86,15 @@ Intent create_dashboard dùng dashboard_name, useTemplate=true, templateId, mapp
 
 Intent clarify dùng clarification. Câu trả lời **query** được dựng từ các dòng kết quả thật, không dùng nội dung số liệu AI tự viết. Số BigDecimal giữ phần lẻ/độ chính xác; NULL hiển thị NULL. metadata_json của tin nhắn lưu dữ liệu kết quả hoặc dashboard_id để mở lại.
 
+Intent `dashboard_action` hỗ trợ `add_kpi`, `filters` và `export_format`. Đích lấy từ hội thoại và kiểm tra quyền sở hữu ở backend. Điều kiện lọc mới thay điều kiện đã lưu trên cùng cột, còn điều kiện của cột khác vẫn áp dụng. Yêu cầu xuất đơn lẻ lấy định dạng từ câu người dùng và trả nút tải qua metadata `dashboard_export`. Test luồng này bằng `python dev/smoke-chat-first.py --live --dashboard-actions` trên môi trường thử.
+
 Ở giao tiếp nội bộ với Gemini, kết quả được bọc trong decision và có schema riêng cho query, template, custom, clarify. Mỗi nhánh bắt buộc đủ trường ngay khi sinh JSON; template cần tên/cách tạo/mẫu/ánh xạ, custom cần tên/cách tạo/2–4 biểu đồ. FastAPI chuẩn hóa lại thành response phẳng ở trên, nên frontend/Spring Boot không đổi hợp đồng.
 
 Lỗi cấu hình AI không hợp lệ được phân biệt với lỗi key/provider bằng header nội bộ X-AI-Error-Code. Web hiển thị thông báo phù hợp, không chuyển nguyên chẩn đoán riêng của provider ra trình duyệt.
 
-Chỉ gửi metadata và 10 tin nhắn gần nhất, không gửi mật khẩu kết nối hoặc toàn bộ bảng/sample rows sang Gemini. Tin nhắn gần nhất có cấu hình phân tích để nối ngữ cảnh. Chưa có tóm tắt dài hạn; hội thoại cũ hơn 10 tin nhắn có thể mất ngữ cảnh đối với model.
+Ở bước lập kế hoạch, gửi metadata và tối đa 10 tin nhắn gần nhất, kèm cấu hình và tóm tắt kết quả đã tính để nối ngữ cảnh. Với lượt phân tích thành công, Spring Boot gọi `/internal/interpret` để Gemini chọn và diễn giải một phần kết quả đã tính. Số liệu trong câu trả lời được chèn từ bằng chứng. Nếu bước diễn giải lỗi hoặc hết thời gian chờ, Chat vẫn trả kết quả từ engine. Không gửi mật khẩu kết nối hoặc toàn bộ bảng nguồn sang Gemini. Hội thoại cũ hơn 10 tin nhắn có thể mất ngữ cảnh đối với model.
+
+Trên file `demo/exploration_dirty_242.csv`, thử hỏi “Phân tích doanh thu giúp tui, có tháng nào bất thường không?”, rồi “Tạm bỏ ngoại lệ đó ra rồi so lại với tháng 3 đi.” Phép tính so sánh giữ cùng dataset và tạm loại ngoại lệ theo IQR, không cập nhật dữ liệu nguồn. Chỉ yêu cầu rõ như “Tạo dashboard doanh thu tháng 3 năm 2025” mới lưu dashboard mới. Chạy kiểm thử hội thoại với `python dev/smoke-chat-first.py --live --conversation --base-url http://127.0.0.1:8081/api` trên môi trường thử.
 
 ## Schema và nâng cấp
 

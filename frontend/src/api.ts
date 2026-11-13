@@ -6,7 +6,7 @@ export type Chart = { id: string; dataset_id: string; dataset_name: string; name
 export type ChartData = { columns?: string[]; rowKeys?: string[]; datasetId?: string; id?: string; name?: string; chartType: ChartType; dimension: string; metric: string; aggregate: string; timeGrain?: 'month' | null; rows: Record<string, unknown>[]; position?: number; x?: number; y?: number; w?: number; h?: number; numericColumns?: string[]; seriesDimension?: string; truncated?: boolean; notes?: string[] }
 export type ChartDefinition = { id: string; datasetId: string; name: string; chartType: ChartType; dimension: string; metric: string; aggregate: 'sum' | 'avg' | 'count'; timeGrain?: 'month' | null; seriesDimension?: string; numericColumns?: string[]; binCount?: number; latitude?: string; longitude?: string; labelColumn?: string }
 export type Dashboard = { id: string; name: string; chart_count: number; share_token: string | null }
-export type DashboardDetail = Dashboard & { charts: ChartData[] }
+export type DashboardDetail = Dashboard & { charts: ChartData[]; scopeFilters?: import('./dashboard-interaction').DashboardFilter[] }
 export type QueryResult = { columns: string[]; rows: Record<string, unknown>[]; truncated: boolean }
 export type FileImport = {
   id: string; file_name: string; row_count: number; missing_count: number; invalid_count: number;

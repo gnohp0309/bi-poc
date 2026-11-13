@@ -12,7 +12,9 @@ import java.net.URI;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.text.Normalizer;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /** AI proposes a plan; only the dataset-scoped analysis/chart services execute it. */
 @Service
@@ -30,14 +32,24 @@ public class Chat {
   private final DashboardTemplates templates;
   private Statistics statistics;
   private DatasetExploration exploration;
+  private ChatNarrative narrative;
+  @org.springframework.beans.factory.annotation.Autowired
+  private ChatDashboardActions dashboardActions;
   @org.springframework.beans.factory.annotation.Autowired
   void explorationServices(Statistics statistics,DatasetExploration exploration) {
     this.statistics=statistics;this.exploration=exploration;
   }
+  @org.springframework.beans.factory.annotation.Autowired
+  void narrativeService(ChatNarrative narrative) { this.narrative=narrative; }
 
   record AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,
       String templateId,String dashboard_name,Map<String,String> mapping,
-      List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config) {
+      List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config,
+      List<Map<String,Object>> dashboard_filters, JsonNode dashboard_action) {
+    AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,String templateId,
+        String dashboard_name,Map<String,String> mapping,List<Map<String,Object>> charts,String clarification,String explanation,JsonNode statistics_config) {
+      this(request_id,intent,query_config,useTemplate,templateId,dashboard_name,mapping,charts,clarification,explanation,statistics_config,null,null);
+    }
     AIResponse(String request_id,String intent,JsonNode query_config,Boolean useTemplate,String templateId,
         String dashboard_name,Map<String,String> mapping,List<Map<String,Object>> charts,String clarification,String explanation) {
       this(request_id,intent,query_config,useTemplate,templateId,dashboard_name,mapping,charts,clarification,explanation,null);
@@ -95,6 +107,7 @@ public class Chat {
         """,conversationId);
     Collections.reverse(history);
     List<Map<String,Object>> context=new ArrayList<>();
+    String recentResult="";
     for(var saved:history) {
       Map<String,Object> item=new LinkedHashMap<>();
       String content=saved.get("content").toString();
@@ -103,17 +116,46 @@ public class Chat {
       try {
         JsonNode extra=mapper.readTree(saved.get("metadata_json").toString());
         if(extra.has("query_config")) item.put("query_config",extra.get("query_config"));
+        if(extra.has("statistics_config")) item.put("statistics_config",extra.get("statistics_config"));
+        if(extra.hasNonNull("result_context")) {
+          recentResult=ChatNarrative.bounded(extra.path("result_context").asText(),1800);
+          item.put("result_context",recentResult);
+        }
       } catch(java.io.IOException ignored) { /* Older messages may have no structured context. */ }
       context.add(item);
     }
     String requestId=UUID.randomUUID().toString();
-    Map<String,Object> request=Map.of("request_id",requestId,"question",message,"dataset_name",metadata.name(),
+    var requested=ChatDashboardActions.requestedActions(message);
+    var target=requested.isEmpty()?Optional.<ChatDashboardActions.Target>empty():dashboardActions.latest(conversationId,actor);
+    Map<String,Object> request=new LinkedHashMap<>(Map.of("request_id",requestId,"question",message,"dataset_name",metadata.name(),
         "columns",metadata.columns().stream().map(c->Map.of("name",c.name(),"type",c.type(),"kind",c.kind(),
             "friendly_name",c.label(),"aggregates",c.aggregates(),"timeGrains",c.timeGrains())).toList(),
-        "conversation_history",context);
-    AIResponse plan=callAI(request);
+        "conversation_history",context,"dashboard_creation_allowed",requestsDashboard(message)));
+    target.ifPresent(dashboard->request.put("dashboard_context",Map.of("name",dashboard.name(),"allowed_actions",requested)));
+    if(target.isEmpty() && !requested.isEmpty() && (!requested.equals(Set.of("filters")) || normalizedWords(message).contains("dashboard"))) {
+      var clarify=new AIResponse(requestId,"clarify",null,null,null,null,null,null,
+          "Hãy tạo dashboard trong hội thoại này trước khi yêu cầu cập nhật hoặc xuất file.",null);
+      return executePlan(conversationId,datasetId,message,clarify,actor,recentResult,null,Set.of());
+    }
+    AIResponse plan;
+    if(target.isPresent() && requested.equals(Set.of("export_format"))) {
+      var formats=ChatDashboardActions.exportFormats(message);
+      if(formats.size()!=1) {
+        plan=new AIResponse(requestId,"clarify",null,null,null,null,null,null,
+            "Hãy chọn một định dạng cho mỗi lượt xuất: Excel, PDF hoặc PNG.",null);
+      } else {
+        plan=new AIResponse(requestId,"dashboard_action",null,null,null,null,null,null,null,null,null,null,
+            mapper.createObjectNode().put("export_format",formats.iterator().next()));
+      }
+    } else {
+      plan=callAI(request);
+    }
     if(!requestId.equals(plan.request_id())) throw new Api.Failure(502,"Phản hồi AI không khớp yêu cầu");
-    return executePlan(conversationId,datasetId,message,plan,actor);
+    if(target.isPresent() && !Set.of("dashboard_action","clarify").contains(plan.intent())) {
+      plan=new AIResponse(requestId,"clarify",null,null,null,null,null,null,
+          "Chat chưa xác định được thao tác trên dashboard. Hãy nêu rõ KPI, điều kiện lọc hoặc định dạng xuất.",null);
+    }
+    return executePlan(conversationId,datasetId,message,plan,actor,recentResult,target.orElse(null),requested);
   }
   AIResponse callAI(Map<String,Object> body) {
     try {
@@ -145,7 +187,15 @@ public class Chat {
   }
   // Invoked inside sendMessage's transaction: any failed chart/message rolls back the entire turn.
   Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor) {
+    return executePlan(conversationId,datasetId,message,plan,actor,"",null,Set.of());
+  }
+  private Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor,
+      String recentResult,ChatDashboardActions.Target target,Set<String> requested) {
     auth.canEdit(actor);
+    if("create_dashboard".equals(plan.intent()) && !requestsDashboard(message)) {
+      plan=new AIResponse(plan.request_id(),"clarify",null,null,null,null,null,null,
+          "Bạn muốn phân tích ngay trong Chat hay tạo dashboard mới? Nếu muốn tạo, hãy nói rõ bạn muốn dashboard về nội dung nào.",null);
+    }
     Map<String,Object> extra=new LinkedHashMap<>();
     Map<String,Object> result=new LinkedHashMap<>();
     String answer;
@@ -179,6 +229,9 @@ public class Chat {
       answer="Dataset có "+overview.get("rowCount")+" dòng, "+overview.get("columnCount")+" cột dữ liệu.\n"+
           "Ô thiếu hiện tại: "+quality.get("missingCells")+"; giá trị số không hữu hạn: "+quality.get("invalidCells")+"; dòng trùng dư: "+quality.get("duplicateRows")+".\n"+
           "Bảng bên dưới có kiểu dữ liệu, tỷ lệ thiếu và số giá trị duy nhất từng cột. Phân tích chỉ đọc, không tự sửa/xóa dữ liệu.";
+      long maxNull=columns.stream().mapToLong(c->((Number)c.get("nullCount")).longValue()).max().orElse(0);
+      String nullNames=String.join(", ",columns.stream().filter(c->((Number)c.get("nullCount")).longValue()==maxNull).map(c->c.get("name").toString()).toList());
+      answer+="\nCột có nhiều NULL nhất: "+nullNames+" ("+maxNull+" ô mỗi cột).";
       Map<String,Object> presentation=new LinkedHashMap<>();
       presentation.put("schemaVersion",1);presentation.put("kind","query");presentation.put("status","success");presentation.put("title","Khám phá chất lượng dataset");
       presentation.put("summary",answer);presentation.put("data",data);presentation.put("warnings",report.get("warnings"));presentation.put("charts",List.of());
@@ -203,17 +256,48 @@ public class Chat {
         extra.put("method","custom");
         extra.put("chart_count",ids.size());
       } else throw Api.bad("AI chưa chọn cách tạo dashboard");
-      answer="Đã tạo dashboard \""+name+"\". Các biểu đồ hiển thị ngay bên dưới; mở dashboard đầy đủ để lọc hoặc chỉnh bố cục.";
+      if(plan.dashboard_filters()!=null && !plan.dashboard_filters().isEmpty()) {
+        var scope=scopedFilters(mapper.valueToTree(plan.dashboard_filters()),datasetId,mapper);
+        dashboards.saveScope(dashboardId,scope,actor);
+        extra.put("dashboard_filters",scope);
+      }
+      answer="Đã tạo dashboard \""+name+"\". Bạn có thể yêu cầu thêm KPI, lọc hoặc xuất file ngay trong Chat.";
       extra.put("dashboard_id",dashboardId.toString());
       extra.put("dashboard_name",name);
       result.put("dashboard_id",dashboardId.toString());
+    } else if("dashboard_action".equals(plan.intent())) {
+      if(target==null || requested.isEmpty()) throw Api.bad("Hãy gửi yêu cầu rõ ràng cho dashboard trong hội thoại này");
+      var outcome=dashboardActions.apply(target,datasetId,plan.dashboard_action(),requested,actor);
+      answer=outcome.answer();
+      extra.put("dashboard_id",target.id().toString());
+      result.put("dashboard_id",target.id().toString());
+      if(!outcome.format().isEmpty()) extra.put("dashboard_export",outcome.format());
     } else if("clarify".equals(plan.intent())) {
       answer=bounded(plan.clarification(),2000,"Câu hỏi làm rõ");
     } else throw Api.bad("AI trả loại yêu cầu không được hỗ trợ");
+    if(result.get("analysis_result") instanceof Map<?,?> report) {
+      JsonNode verified=mapper.valueToTree(report);
+      String insight=verified.has("insightContext") ? "Phạm vi Insights đã chạy: "+verified.get("insightContext")+"\n" : "";
+      extra.put("result_context",ChatNarrative.bounded(insight+answer,1800));
+      if(narrative!=null) {
+        var explanation=narrative.explain(message,report,recentResult);
+        result.put("narrative_source",explanation.isPresent()?"gemini":"engine");
+        if(explanation.isPresent()) {
+          answer=explanation.get();
+          Map<String,Object> withNarrative=new LinkedHashMap<>();
+          report.forEach((k,v)->withNarrative.put(k.toString(),v));
+          withNarrative.put("narrative",answer);
+          extra.put("analysis_result",withNarrative);
+          result.put("analysis_result",withNarrative);
+        }
+      }
+    }
     extra.put("intent",plan.intent());
     UUID assistantId=UUID.randomUUID();
+    UUID questionId=UUID.randomUUID();
+    extra.put("question_id",questionId.toString());
     try {
-      db.update("INSERT INTO chat_messages(id,conversation_id,role,content) VALUES (?,?,'user',?)",UUID.randomUUID(),conversationId,message);
+      db.update("INSERT INTO chat_messages(id,conversation_id,role,content) VALUES (?,?,'user',?)",questionId,conversationId,message);
       db.update("INSERT INTO chat_messages(id,conversation_id,role,content,metadata_json) VALUES (?,?,'assistant',?,?)",
           assistantId,conversationId,answer,mapper.writeValueAsString(extra));
     } catch(com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Cannot save chat result",e); }
@@ -223,6 +307,34 @@ public class Chat {
     result.put("intent",plan.intent());
     result.put("answer",answer);
     return result;
+  }
+  private static final String DASHBOARD="(?:dashboard|bang dieu khien|bang tong quan)";
+  private static final String CREATE_DASHBOARD="(?:(?:tao|lam|lap|dung|thiet ke|create|build|generate)"
+      +"(?: (?:giup|cho|minh|tui|toi|em|ban|mot|cai|them|moi|luon|di|a|an|new)){0,7}"
+      +"|(?:luu|chuyen)(?: ket qua| phan tich| nay| no| thanh){1,5}|save(?: (?:this|it|result|as|a)){0,5}) "+DASHBOARD;
+  private static final Pattern DASHBOARD_REQUEST=Pattern.compile("\\b"+CREATE_DASHBOARD+"\\b");
+  private static final Pattern DASHBOARD_NON_REQUEST=Pattern.compile("\\b(?:khong(?: can| muon| duoc)?|dung|chua|tam dung|"
+      +"chi hoi cach|cach|lam sao de|huong dan(?: cach)?|giai thich cach|neu toi noi|tai sao|vi sao|"
+      +"do not|don t|how to|how do i|why did you)(?: (?:hay|giup|tui|toi|minh|ban|lai)){0,4} "+CREATE_DASHBOARD+"\\b");
+  static boolean requestsDashboard(String message) {
+    String normalized=normalizedWords(message);
+    return DASHBOARD_REQUEST.matcher(normalized).find() && !DASHBOARD_NON_REQUEST.matcher(normalized).find();
+  }
+  static String normalizedWords(String message) {
+    return Normalizer.normalize(message.toLowerCase(Locale.ROOT),Normalizer.Form.NFD)
+        .replaceAll("\\p{M}+", "").replace('đ','d').replaceAll("[^a-z0-9]+", " ").strip();
+  }
+  static List<Map<String,Object>> scopedFilters(JsonNode filters,UUID datasetId,ObjectMapper mapper) {
+    if(!filters.isArray() || filters.size()>12) throw Api.bad("Cần danh sách tối đa 12 bộ lọc");
+    var scope=new ArrayList<Map<String,Object>>();
+    for(var filter:filters) {
+      if(!filter.isObject()) throw Api.bad("Bộ lọc dashboard không hợp lệ");
+      Map<String,Object> entry=mapper.convertValue(filter,new com.fasterxml.jackson.core.type.TypeReference<>() {});
+      if(!Set.of("column","op","value","end").containsAll(entry.keySet()))throw Api.bad("Bộ lọc dashboard không hợp lệ");
+      entry.put("datasetId",datasetId.toString());
+      scope.add(entry);
+    }
+    return scope;
   }
   static List<Map<String,Object>> customSpecs(List<Map<String,Object>> proposed,UUID datasetId) {
     if(proposed==null || proposed.size()<2 || proposed.size()>4) throw Api.bad("Dashboard custom cần từ 2 đến 4 biểu đồ");

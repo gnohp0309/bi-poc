@@ -15,6 +15,16 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ChatTests {
+  @Test void dashboardFollowUpsRequireRequestedOperations() {
+    assertEquals(java.util.Set.of("add_kpi","filters"),
+        ChatDashboardActions.requestedActions("Thêm KPI tổng doanh thu vào dashboard vừa tạo và lọc chi nhánh A."));
+    assertEquals(java.util.Set.of("export_format"),
+        ChatDashboardActions.requestedActions("Xuất dashboard vừa tạo ra Excel."));
+    assertEquals(java.util.Set.of("xlsx","pdf"),ChatDashboardActions.exportFormats("Xuất Excel hoặc PDF"));
+    assertTrue(ChatDashboardActions.requestedActions("Cho tui xem doanh thu dashboard, lọc chi nhánh A trong kết quả.").isEmpty());
+    assertTrue(ChatDashboardActions.requestedActions("Đừng thêm KPI vào dashboard.").isEmpty());
+    assertTrue(ChatDashboardActions.requestedActions("Hướng dẫn cách xuất dashboard ra Excel.").isEmpty());
+  }
   private final JdbcTemplate db=mock(JdbcTemplate.class);
   private final Datasets datasets=mock(Datasets.class);
   private final DatasetAnalysis analysis=mock(DatasetAnalysis.class);
@@ -72,9 +82,27 @@ class ChatTests {
     var bad=Map.<String,Object>of("name","Second","chartType","bar","dimension","missing","metric","amount","aggregate","sum");
     when(charts.preview(anyMap(),isNull())).thenReturn(Map.of()).thenThrow(Api.bad("Missing column"));
     var plan=new Chat.AIResponse("id","create_dashboard",null,false,null,"Report",null,List.of(good,bad),null,null);
-    assertThrows(Api.Failure.class,()->chat.executePlan(UUID.randomUUID(),UUID.randomUUID(),"dashboard",plan,admin));
+    assertThrows(Api.Failure.class,()->chat.executePlan(UUID.randomUUID(),UUID.randomUUID(),"Tạo dashboard",plan,admin));
     verify(charts,never()).save(anyMap(),any());
     verifyNoInteractions(db,dashboards);
+  }
+  @Test void dashboardPlanCannotWriteForAnalysisOrNegatedRequest() {
+    var plan=new Chat.AIResponse("id","create_dashboard",null,true,"sales-overview","Revenue",Map.of(),null,null,null);
+    for(String question:List.of("Phân tích doanh thu giúp tui", "Vẽ biểu đồ, đừng tạo dashboard", "Làm sao để tạo dashboard?")) {
+      var response=chat.executePlan(UUID.randomUUID(),UUID.randomUUID(),question,plan,admin);
+      assertEquals("clarify",response.get("intent"));assertFalse(response.containsKey("dashboard_id"));
+    }
+    verifyNoInteractions(charts,dashboards,templates);
+    assertTrue(Chat.requestsDashboard("Tạo cho tui một dashboard doanh thu tháng 3 năm 2025"));
+    assertTrue(Chat.requestsDashboard("Lưu kết quả này thành dashboard"));
+  }
+  @Test void narrativeReplacesReferencesWithoutAcceptingInventedNumbers() {
+    var facts=Map.of("row1","Doanh thu: 6420", "row2", "Doanh thu: 6900");
+    assertEquals("So sánh theo số liệu đã tính.\nDoanh thu: 6420\nDoanh thu: 6900",
+        ChatNarrative.render("So sánh theo số liệu đã tính.\n[[row1]]\n[[row2]]",facts).orElseThrow());
+    assertTrue(ChatNarrative.render("[[row1]] tăng 999%",facts).isEmpty());
+    assertTrue(ChatNarrative.render("[[unknown]]",facts).isEmpty());
+    assertTrue(ChatNarrative.render("Không có bằng chứng.",facts).isEmpty());
   }
   @ParameterizedTest @ValueSource(ints={0,1,5})
   void customChartCountIsBounded(int count) {

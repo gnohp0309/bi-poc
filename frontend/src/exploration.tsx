@@ -1,5 +1,5 @@
 import { StatisticsPanel } from './statistics-panel'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { Dataset } from './api'
 import { getExplorationReport, formatStatistic as fmt } from './exploration-api'
 import type { ColumnProfile, ExplorationReport } from './exploration-api'
@@ -15,8 +15,12 @@ type Tab = typeof tabs[number][0]
 const percent = (n: number | null) => n === null ? '—' : `${fmt(n)}%`
 const bytes = (n: number) => n < 1024 ? `${fmt(n)} B` : n < 1048576 ? `${fmt(n / 1024)} KB` : `${fmt(n / 1048576)} MB`
 
-export function ExplorationPage({ datasets, canEdit }: { datasets: Dataset[]; canEdit: boolean }) {
-  const [datasetId, setDatasetId] = useState('')
+export function ExplorationPage({ datasets, canEdit, fixedDatasetId }: {
+  datasets: Dataset[]; canEdit: boolean; fixedDatasetId?: string
+}) {
+  const [selectedDatasetId, setDatasetId] = useState('')
+  const datasetId = fixedDatasetId ?? selectedDatasetId
+  const tabsId = useId()
   const [tab, setTab] = useState<Tab>('overview')
   const [report, setReport] = useState<ExplorationReport | null>(null)
   const [columnName, setColumnName] = useState('')
@@ -25,8 +29,8 @@ export function ExplorationPage({ datasets, canEdit }: { datasets: Dataset[]; ca
   const [attempt, setAttempt] = useState(0)
   const [search, setSearch] = useState('')
   useEffect(() => {
-    if (!datasets.some(d => d.id === datasetId)) setDatasetId(datasets[0]?.id || '')
-  }, [datasets, datasetId])
+    if (!fixedDatasetId && !datasets.some(d => d.id === selectedDatasetId)) setDatasetId(datasets[0]?.id || '')
+  }, [datasets, fixedDatasetId, selectedDatasetId])
   useEffect(() => {
     let active = true
     setReport(null); setError(''); setColumnName(''); setSearch(''); setLoading(!!datasetId)
@@ -41,23 +45,24 @@ export function ExplorationPage({ datasets, canEdit }: { datasets: Dataset[]; ca
 
   return <div className="stack exploration-page">
     <section className="surface">
-      <SectionTitle label="Khám phá dataset" />
-      <div className="inline-form"><label>Dataset<select value={datasetId} onChange={e => setDatasetId(e.target.value)} disabled={!datasets.length}>
+      <SectionTitle label={fixedDatasetId && report ? report.name : 'Khám phá dataset'} />
+      <div className="inline-form">{!fixedDatasetId && <label>Dataset<select value={datasetId} onChange={e => setDatasetId(e.target.value)} disabled={!datasets.length}>
         {!datasets.length && <option value="">Chưa có dataset</option>}
         {datasets.map(d => <option key={d.id} value={d.id}>{d.name} · {d.kind === 'PHYSICAL' ? 'Vật lý' : 'SQL ảo'}</option>)}
-      </select></label><button className="secondary-button" disabled={!datasetId || loading} onClick={() => setAttempt(a => a + 1)}>Tải lại báo cáo</button></div>
+      </select></label>}<button className="secondary-button" disabled={!datasetId || loading} onClick={() => setAttempt(a => a + 1)}>Tải lại báo cáo</button></div>
+      {fixedDatasetId && <p className="hint">Báo cáo sử dụng dữ liệu hiện tại của dataset trong tin nhắn.</p>}
       <p className="hint">Báo cáo chỉ đọc, tính trên toàn bộ dataset. Không xóa hay sửa dữ liệu gốc. Có thể cần thời gian với dataset lớn.</p>
     </section>
-    {!datasets.length ? <section className="surface"><Empty title="Chưa có dataset" text="Nhập CSV hoặc tạo dataset từ PostgreSQL trước khi khám phá." /></section>
+    {!fixedDatasetId && !datasets.length ? <section className="surface"><Empty title="Chưa có dataset" text="Nhập CSV hoặc tạo dataset từ PostgreSQL trước khi khám phá." /></section>
       : loading ? <section className="surface" role="status" aria-live="polite">Đang phân tích toàn bộ dataset…</section>
       : error ? <section className="surface"><p className="form-error" role="alert">{error}</p><button className="secondary-button" onClick={() => setAttempt(a => a + 1)}>Thử lại</button></section>
       : report && <>
         <div className="exploration-report-meta"><span>Toàn bộ dataset · {report.sampled ? 'Có lấy mẫu' : 'Không lấy mẫu'}</span><span>Cập nhật: {new Date(report.generatedAt).toLocaleString('vi-VN')}</span></div>
         {report.overview.rowCount === 0 && <div className="notice" role="status">Dataset rỗng. Cấu trúc cột vẫn hiển thị; tỷ lệ và thống kê không có dữ liệu được ghi “—”.</div>}
         <div className="exploration-tabs" role="tablist" aria-label="Nội dung khám phá">
-          {tabs.map(([key, label]) => <button type="button" key={key} role="tab" id={`exploration-tab-${key}`} aria-controls="exploration-panel" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}
+          {tabs.map(([key, label]) => <button type="button" key={key} role="tab" id={`${tabsId}-${key}`} aria-controls={tabsId} aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}
         </div>
-        <section className="surface" id="exploration-panel" role="tabpanel" aria-labelledby={`exploration-tab-${tab}`}>
+        <section className="surface" id={tabsId} role="tabpanel" aria-labelledby={`${tabsId}-${tab}`}>
           {tab === 'overview' && <>
             <div className="metric-grid">{[
               ['Số dòng', fmt(report.overview.rowCount)], ['Số cột dữ liệu', fmt(report.overview.columnCount)],
@@ -89,10 +94,28 @@ export function ExplorationPage({ datasets, canEdit }: { datasets: Dataset[]; ca
             {column && <ColumnStatistics column={column} datasetId={datasetId} />}
           </>}
         </section>
-        <StatisticsPanel key={datasetId} datasetId={datasetId} columns={report.columns} canEdit={canEdit} />
+        {!fixedDatasetId && <StatisticsPanel key={datasetId} datasetId={datasetId} columns={report.columns} canEdit={canEdit} />}
         <section className="surface"><SectionTitle label="Phạm vi và lưu ý" /><ul>{report.warnings.map(w => <li key={w}>{w}</li>)}</ul></section>
       </>}
   </div>
+}
+
+export function ExplorationReportDialog({ datasetId, onClose }: { datasetId: string; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  useEffect(() => {
+    const node = dialog.current
+    node?.showModal()
+    return () => node?.close()
+  }, [])
+  return <dialog className="dashboard-chart-dialog exploration-report-dialog" ref={dialog} aria-labelledby={titleId}
+    onCancel={event => { event.preventDefault(); onClose() }}>
+    <header className="exploration-report-dialog-header">
+      <h2 id={titleId}>Báo cáo khám phá chi tiết</h2>
+      <button className="secondary-button" onClick={onClose}>Đóng báo cáo</button>
+    </header>
+    <ExplorationPage datasets={[]} fixedDatasetId={datasetId} canEdit={false} />
+  </dialog>
 }
 
 function ColumnStatistics({ column: c, datasetId }: { column: ColumnProfile; datasetId: string }) {

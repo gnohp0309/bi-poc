@@ -22,9 +22,12 @@ test('filter descriptions use the applied dataset scope and UTC date range',()=>
 })
 test('PDF pages cover all pixels and prefer gaps between chart rows',()=>{
  const pages=pageSlices(1500,800,[{top:100,bottom:500},{top:520,bottom:1000},{top:1020,bottom:1480}])
- assert.equal(pages[0].height,520);assert.equal(pages.reduce((n,p)=>n+p.height,0),1500)
+ assert.equal(pages[0].height,500);assert.equal(pages.reduce((n,p)=>n+p.height,0),1500)
  pages.forEach((p,i)=>{assert.ok(p.height>0 && p.height<=800);assert.equal(p.top,i?pages[i-1].top+pages[i-1].height:0)})
- assert.equal(pageSlices(2000,700,[{top:0,bottom:2000}]).length,3)
+ assert.equal(pageSlices(2000,700,[{top:0,bottom:2000}]).length,1)
+ assert.deepEqual(pageSlices(2120,500,[{top:300,bottom:900},{top:920,bottom:1500},{top:1520,bottom:2100}]),[
+  {top:0,height:900},{top:900,height:600},{top:1500,height:620},
+ ])
  assert.throws(()=>pageSlices(10,0,[]))
 })
 test('XLSX opens with exact rows, literal formulas, metadata, NULL and zero',async()=>{

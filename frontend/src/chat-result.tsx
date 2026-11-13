@@ -2,25 +2,36 @@ import { Component, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ChartCanvas } from './ui'
 import { ChatDashboard } from './chat-dashboard'
+import { ChatVerification } from './chat-verification'
+import type { OpenChatDashboard } from './chat-dashboard'
 import { parseChatResult, formatResultValue as fmt } from './chat-result-model'
 import type { AnalysisResult, Measurement, ResultTable } from './chat-result-model'
 import './chat-result.css'
 
-const stateLabels = { success: 'Đã có kết quả', insufficient_data: 'Không đủ dữ liệu', not_applicable: 'Không áp dụng', error: 'Không thực hiện được' }
+const stateLabels = { success: 'Đã có kết quả', insufficient_data: 'Không đủ dữ liệu', not_applicable: 'Không áp dụng', error: 'Không thực hiện được', needs_confirmation: 'Cần xác nhận thiết kế dữ liệu' }
 const assumptionLabels = { passed: 'Đạt', failed: 'Không đạt', not_checked: 'Chưa kiểm tra', not_applicable: 'Không áp dụng' }
 function Text({ content }: { content: string }) { return <div className="message-content">{content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div> }
 
-export function ChatResult({ metadataJson, content, openDashboard }: { metadataJson: string; content: string; openDashboard: (id: string) => void }) {
+export function ChatResult({ metadataJson, content, openDashboard, dashboardVersions, datasetId, datasets = [], onOpenReport, verification }: {
+  metadataJson: string; content: string; openDashboard: OpenChatDashboard; dashboardVersions?: Record<string, number>
+  datasetId?: string; datasets?: import('./api').Dataset[]; onOpenReport?: (id: string) => void
+  verification?: { conversationId: string; messageId: string }
+}) {
   const parsed = useMemo(() => parseChatResult(metadataJson), [metadataJson])
   const result = parsed.result
+  const reportId = parsed.explorationDatasetId
   return <>
-    {result ? <details className="chat-result-original"><summary>Xem câu trả lời dạng văn bản</summary><Text content={content} /></details> : <Text content={content} />}
+    {!result ? <Text content={content} /> : result.narrative ? <Text content={result.narrative} /> :
+      <details className="chat-result-original"><summary>Xem câu trả lời dạng văn bản</summary><Text content={content} /></details>}
     {parsed.problems.length > 0 && <div className="chat-result-warning" role="status">{parsed.problems.map((p, i) => <p key={i}>{p}</p>)}</div>}
     <div className="message-meta">
       {result && <AnalysisResultView result={result} />}
       {!result && parsed.table && <ResultTableView table={parsed.table} />}
-      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} />}
+      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} datasets={datasets} exportFormat={parsed.dashboardExport} />}
     </div>
+    {verification && parsed.canVerify && <ChatVerification {...verification} dashboard={!!parsed.dashboardId} />}
+    {reportId && reportId.toLowerCase() === datasetId?.toLowerCase() && onOpenReport &&
+      <button className="secondary-button chat-exploration-button" onClick={() => onOpenReport(reportId)}>Xem báo cáo chi tiết</button>}
   </>
 }
 
@@ -28,8 +39,15 @@ export function AnalysisResultView({ result: r }: { result: AnalysisResult }) {
   const assumptionsUncertain = r.assumptions.some(a => a.status === 'failed' || a.status === 'not_checked')
   return <section className="chat-analysis-result" aria-label={r.kind === 'statistical_test' ? 'Kết quả kiểm định thống kê' : 'Kết quả phân tích dữ liệu'}>
     <div className="chat-result-heading"><h3>{r.title}</h3><span className={`chat-result-badge ${r.status}`}>{stateLabels[r.status]}</span></div>
-    {r.summary && <p>{r.summary}</p>}
-    {r.status !== 'success' && <div className="chat-result-warning" role="status"><strong>{stateLabels[r.status]}</strong><p>{r.reason || 'Engine chưa cung cấp đủ thông tin để thực hiện phân tích này.'}</p><p>Chưa thể đưa ra kết luận kiểm định từ kết quả này.</p></div>}
+    {r.summary && <div>{r.summary.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
+    {r.status === 'needs_confirmation' && r.sample && <dl className="chat-result-facts">
+      <div><dt>Số dòng đầu vào</dt><dd>{fmt(r.sample.total)}</dd></div>
+      <div><dt>Số dòng hợp lệ</dt><dd>{fmt(r.sample.used)}</dd></div>
+      <div><dt>Số dòng thiếu hoặc sai kiểu</dt><dd>{fmt(r.sample.missing)}</dd></div>
+      <div><dt>Số dòng ngoài nhóm đã chọn</dt><dd>{fmt(r.sample.excluded)}</dd></div>
+    </dl>}
+    {r.kind !== 'statistical_test' && r.assumptions.length > 0 && <div className="chat-result-section"><h4>Kiểm tra điều kiện</h4><ul className="chat-assumptions">{r.assumptions.map((a, i) => <li key={i}><strong>{a.name} · {assumptionLabels[a.status]}</strong><p>{a.detail}</p></li>)}</ul></div>}
+    {r.status !== 'success' && r.status !== 'needs_confirmation' && <div className="chat-result-warning" role="status"><strong>{stateLabels[r.status]}</strong><p>{r.reason || 'Engine chưa cung cấp đủ thông tin để thực hiện phân tích này.'}</p><p>Chưa thể đưa ra kết luận kiểm định từ kết quả này.</p></div>}
     {r.kind === 'statistical_test' && <>
       <dl className="chat-result-facts"><div><dt>Phương pháp</dt><dd>{r.method || 'Chưa được engine cung cấp'}</dd></div><div><dt>Mức ý nghĩa α</dt><dd>{fmt(r.alpha)}</dd></div></dl>
       <div className="chat-result-section"><h4>Giả thuyết</h4><dl className="chat-result-facts"><div><dt>H0</dt><dd>{r.hypotheses?.h0 || 'Chưa được engine cung cấp'}</dd></div><div><dt>H1</dt><dd>{r.hypotheses?.h1 || 'Chưa được engine cung cấp'}</dd></div></dl></div>

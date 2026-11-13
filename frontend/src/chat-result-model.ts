@@ -1,11 +1,12 @@
 import type { ChartData } from './api'
+import type { DashboardExportFormat } from './dashboard-export'
 
 export type ResultValue = string | number | null
 export type Measurement = { status: 'available' | 'not_applicable' | 'not_computed'; value: ResultValue; name?: string; reason?: string }
 export type ResultTable = { columns: string[]; rows: Record<string, string | number | boolean | null>[]; truncated: boolean; receivedRows: number }
 export type AnalysisResult = {
-  schemaVersion: 1; kind: 'query' | 'statistical_test'; status: 'success' | 'insufficient_data' | 'not_applicable' | 'error'
-  title: string; summary?: string; method?: string; hypotheses?: { h0?: string; h1?: string }; alpha?: ResultValue
+  schemaVersion: 1; kind: 'query' | 'statistical_test'; status: 'success' | 'insufficient_data' | 'not_applicable' | 'error' | 'needs_confirmation'
+  title: string; summary?: string; narrative?: string; method?: string; hypotheses?: { h0?: string; h1?: string }; alpha?: ResultValue
   sample?: { total?: ResultValue; used?: ResultValue; missing?: ResultValue; excluded?: ResultValue; groups: { name: string; count: ResultValue }[] }
   statistic?: Measurement; pValue?: Measurement
   confidenceInterval?: { status: Measurement['status']; lower: ResultValue; upper: ResultValue; level?: ResultValue; reason?: string }
@@ -14,10 +15,11 @@ export type AnalysisResult = {
   warnings: string[]; conclusion?: string; reason?: string; data?: ResultTable; charts: ChartData[]
   provenance?: { engine?: string; version?: string; sampled?: boolean; sampleSize?: ResultValue; missingPolicy?: string; scope?: string }
 }
-export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; dashboardId?: string; problems: string[] }
+export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; dashboardId?: string; dashboardExport?: DashboardExportFormat; explorationDatasetId?: string; canVerify?: boolean; problems: string[] }
 type Obj = Record<string, unknown>
 const object = (v: unknown): v is Obj => v !== null && typeof v === 'object' && !Array.isArray(v)
 const string = (v: unknown): string | undefined => typeof v === 'string' && v.trim() ? v : undefined
+const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
 const value = (v: unknown): ResultValue => typeof v === 'string' && /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/i.test(v) || typeof v === 'number' && Number.isFinite(v) ? v as ResultValue : null
 const strings = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 100) : []
 const member = <T extends string>(v: unknown, values: readonly T[]): v is T => typeof v === 'string' && values.includes(v as T)
@@ -51,19 +53,26 @@ export function parseChatResult(metadataJson: string): ParsedChatResult {
   if (metadataJson.length > 2_000_000) return { problems: ['Kết quả đã lưu quá lớn để hiển thị trong một tin nhắn.'] }
   try { metadata = JSON.parse(metadataJson) } catch { return { problems: ['Không đọc được dữ liệu kết quả đã lưu. Nội dung tin nhắn vẫn được giữ.'] } }
   if (!object(metadata)) return { problems: ['Metadata kết quả không đúng định dạng.'] }
-  if (typeof metadata.dashboard_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(metadata.dashboard_id)) parsed.dashboardId = metadata.dashboard_id
+  if (uuid(metadata.dashboard_id)) parsed.dashboardId = metadata.dashboard_id
+  if (object(metadata.query_config) || parsed.dashboardId && !metadata.dashboard_export) parsed.canVerify = true
+  if (parsed.dashboardId && metadata.intent === 'dashboard_action' && member(metadata.dashboard_export, ['xlsx', 'pdf', 'png'] as const)) {
+    parsed.dashboardExport = metadata.dashboard_export
+  }
+  if (metadata.intent === 'explore' && object(metadata.exploration) && uuid(metadata.exploration.datasetId)) {
+    parsed.explorationDatasetId = metadata.exploration.datasetId
+  }
   if (metadata.data !== undefined) {
     parsed.table = parseResultTable(metadata.data)
     if (!parsed.table) parsed.problems.push('Bảng kết quả không hợp lệ nên chưa thể hiển thị.')
   }
   const raw = metadata.analysis_result
   if (raw === undefined) return parsed
-  if (!object(raw) || raw.schemaVersion !== 1 || !member(raw.kind, ['query', 'statistical_test']) || !member(raw.status, ['success', 'insufficient_data', 'not_applicable', 'error'])) {
+  if (!object(raw) || raw.schemaVersion !== 1 || !member(raw.kind, ['query', 'statistical_test']) || !member(raw.status, ['success', 'insufficient_data', 'not_applicable', 'error', 'needs_confirmation'])) {
     parsed.problems.push('Phiên bản hoặc cấu trúc kết quả phân tích chưa được hỗ trợ.'); return parsed
   }
   const result: AnalysisResult = {
     schemaVersion: 1, kind: raw.kind, status: raw.status, title: string(raw.title) || (raw.kind === 'statistical_test' ? 'Kết quả kiểm định thống kê' : 'Kết quả phân tích'),
-    summary: string(raw.summary), method: string(raw.method), alpha: value(raw.alpha), statistic: measurement(raw.statistic), pValue: measurement(raw.pValue), effectSize: measurement(raw.effectSize),
+    summary: string(raw.summary), narrative: string(raw.narrative), method: string(raw.method), alpha: value(raw.alpha), statistic: measurement(raw.statistic), pValue: measurement(raw.pValue), effectSize: measurement(raw.effectSize),
     warnings: strings(raw.warnings), conclusion: string(raw.conclusion), reason: string(raw.reason), assumptions: [], charts: [],
   }
   if (raw.data !== undefined) {

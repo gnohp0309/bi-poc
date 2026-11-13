@@ -47,7 +47,8 @@ export async function pdfBlob(capture: Awaited<ReturnType<typeof captureDashboar
     const ctx = part.getContext('2d'); if (!ctx) throw new Error('Trình duyệt không hỗ trợ xuất PDF.')
     ctx.fillStyle = '#f5f6f2'; ctx.fillRect(0, 0, part.width, part.height)
     ctx.drawImage(canvas, 0, slice.top, canvas.width, slice.height, 0, 0, part.width, slice.height)
-    pdf.addImage(part, 'PNG', 10, 10, width, slice.height / canvas.width * width, undefined, 'FAST')
+    const scale = Math.min(width / canvas.width, height / slice.height)
+    pdf.addImage(part, 'PNG', 10 + (width - canvas.width * scale) / 2, 10, canvas.width * scale, slice.height * scale, undefined, 'FAST')
     pdf.setFontSize(8); pdf.setTextColor(90); pdf.text(`${i + 1} / ${slices.length}   |   ${snapshot.exportedAt}`, 10, pdf.internal.pageSize.getHeight() - 7)
     part.width = part.height = 0
   }

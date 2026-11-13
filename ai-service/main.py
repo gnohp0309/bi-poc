@@ -67,6 +67,8 @@ app.include_router(hypothesis_router.router)
 app.include_router(chat_router.router)
 app.include_router(integration.router)
 app.include_router(legacy_analyze.router)  # Legacy /analyze endpoint
+from app.routers import interpret
+app.include_router(interpret.router)
 
 
 @app.get("/", tags=["Health Check"])

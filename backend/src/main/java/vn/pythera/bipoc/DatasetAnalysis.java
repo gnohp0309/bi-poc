@@ -75,13 +75,22 @@ public class DatasetAnalysis {
     }catch(SQLException e){throw Api.bad("Không đọc được cấu trúc dataset; kiểm tra kết nối và định nghĩa nguồn");}
   }
   public Map<String,Object> analyze(UUID id,JsonNode body,Auth.Actor actor){
+    return analyze(id,body,actor,null);
+  }
+  Map<String,Object> analyze(UUID id,JsonNode body,Auth.Actor actor,String finiteMetric){
     auth.canEdit(actor);
     Request request;
     try { request=reader.readValue(body); }
     catch(java.io.IOException|IllegalArgumentException e){throw Api.bad("Yêu cầu phân tích không hợp lệ; kiểm tra trường và kiểu dữ liệu theo hợp đồng API");}
     Map<String,Object> dataset=datasets.get(id);
     Metadata metadata=inspect(id,dataset);
-    Plan plan=compile(metadata,request,datasets.source(dataset));
+    String source=datasets.source(dataset);
+    if(finiteMetric!=null) {
+      if(metadata.columns().stream().noneMatch(c->c.name().equals(finiteMetric) && c.kind().equals("number")))
+        throw Api.bad("Cột KPI cần chứa số");
+      source="(SELECT * FROM "+source+" WHERE "+DashboardInteraction.finite(quoted(finiteMetric))+") verification_source";
+    }
+    Plan plan=compile(metadata,request,source);
     Map<String,Object> result=queries.run((UUID)dataset.get("connection_id"),plan.sql(),plan.parameters().toArray());
     @SuppressWarnings("unchecked") List<Map<String,Object>> rows=(List<Map<String,Object>>)result.get("rows");
     boolean truncated=Boolean.TRUE.equals(result.get("truncated")) || rows.size()>plan.limit();

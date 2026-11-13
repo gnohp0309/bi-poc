@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
-import type { Dataset, Conversation, ConversationDetail, ChatResponse } from './api'
+import type { Chart, Dashboard, Dataset, Conversation, ConversationDetail, ChatResponse } from './api'
 import { Empty, SectionTitle } from './ui'
 import { ChatResult } from './chat-result'
+import { ChatDashboardPanel } from './chat-dashboard'
+import { ExplorationReportDialog } from './exploration'
 
 type Done = (message: string) => void
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
 
-export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets: Dataset[]; canEdit: boolean; done: Done; openDashboard: (id: string) => void }) {
+export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
+  datasets: Dataset[]; charts: Chart[]; dashboards: Dashboard[]; canEdit: boolean; done: Done
+}) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConv, setSelectedConv] = useState<ConversationDetail | null>(null)
   const [datasetId, setDatasetId] = useState('')
@@ -15,6 +19,24 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [sidebarHidden, setSidebarHidden] = useState(false)
+  const [dashboardId, setDashboardId] = useState<string | null>(null)
+  const [reportDatasetId, setReportDatasetId] = useState<string | null>(null)
+  const [dashboardVersions, setDashboardVersions] = useState<Record<string, number>>({})
+  const dashboardTrigger = useRef<HTMLElement>(null)
+  const leaveDashboard = useRef<(() => boolean) | null>(null)
+
+  function openDashboard(id: string, trigger: HTMLElement) {
+    if (dashboardId === id || leaveDashboard.current?.() === false) return
+    dashboardTrigger.current = trigger
+    setDashboardId(id)
+  }
+
+  function closeDashboard() {
+    if (leaveDashboard.current?.() === false) return
+    setDashboardId(null)
+    const trigger = dashboardTrigger.current
+    requestAnimationFrame(() => { if (trigger?.isConnected) trigger.focus() })
+  }
 
   useEffect(() => {
     if (datasets.length && !datasetId) setDatasetId(datasets[0].id)
@@ -34,7 +56,7 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   }
 
   async function createConversation() {
-    if (!datasetId || !canEdit || busy) return
+    if (!datasetId || !canEdit || busy || leaveDashboard.current?.() === false) return
     try {
       const dataset = datasets.find(d => d.id === datasetId)
       const title = `Chat: ${dataset?.name || 'Dataset'}`
@@ -48,8 +70,10 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   }
 
   async function openConversation(id: string) {
+    if (selectedConv?.id !== id && leaveDashboard.current?.() === false) return
     try {
       const conv = await api<ConversationDetail>(`/chat/conversations/${id}`)
+      if (selectedConv?.id !== conv.id) setDashboardId(null)
       setSelectedConv(conv)
       setDatasetId(conv.dataset_id)
       setStatus('')
@@ -59,10 +83,14 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   }
 
   async function deleteConversation(id: string) {
+    if (selectedConv?.id === id && leaveDashboard.current?.() === false) return
     if (!confirm('Xóa cuộc hội thoại này?')) return
     try {
       await api(`/chat/conversations/${id}`, 'DELETE')
-      if (selectedConv?.id === id) setSelectedConv(null)
+      if (selectedConv?.id === id) {
+        setSelectedConv(null)
+        setDashboardId(null)
+      }
       await loadConversations()
       done('Đã xóa cuộc hội thoại.')
     } catch (e) {
@@ -102,7 +130,12 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
       // Reload conversation to get updated messages
       await openConversation(selectedConv.id)
       await loadConversations() // Update list timestamps
-      if (response.dashboard_id) done('Đã tạo dashboard từ hội thoại.')
+      if (response.dashboard_id) {
+        const updated = response.dashboard_id
+        setDashboardVersions(versions => ({ ...versions, [updated]: (versions[updated] ?? 0) + 1 }))
+        if (dashboardId) setDashboardId(updated)
+        if (response.intent === 'create_dashboard') done('Đã tạo dashboard từ hội thoại.')
+      }
     } catch (e) {
       setStatus(errorText(e))
       setMessage(userMessage) // Restore message on error
@@ -117,17 +150,36 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
   }
 
   const selectedDataset = datasets.find(d => d.id === datasetId)
+  const showSidebar = !sidebarHidden && !dashboardId
+  const layoutClass = dashboardId ? ' with-dashboard' : sidebarHidden ? ' without-sidebar' : ''
 
   return (
-    <div className={'two-column wide-left chat-layout' + (sidebarHidden ? ' without-sidebar' : '')}>
-      <section className={`surface chat-main ${sidebarHidden ? 'full-width' : ''}`}>
+    <div className={'two-column wide-left chat-layout' + layoutClass}>
+      <section className={`surface chat-main ${sidebarHidden && !dashboardId ? 'full-width' : ''}`}>
         <div className="panel-head">
           <SectionTitle label="Chat AI" />
-          {selectedConv && <button className="text-link" disabled={busy} onClick={() => { setSelectedConv(null); setStatus('') }}>Hội thoại mới</button>}
-          <button className="text-link" onClick={() => setSidebarHidden(!sidebarHidden)}>
+          {selectedConv && <button className="text-link" disabled={busy} onClick={() => {
+            if (leaveDashboard.current?.() === false) return
+            setSelectedConv(null); setDashboardId(null); setStatus('')
+          }}>Hội thoại mới</button>}
+          {!dashboardId && <button className="text-link" onClick={() => setSidebarHidden(!sidebarHidden)}>
             {sidebarHidden ? '☰ Hiện danh sách' : '⇄ Ẩn danh sách'}
-          </button>
+          </button>}
         </div>
+        <div className="actions">
+          <button className="secondary-button" disabled={!datasetId || busy} onClick={() => setReportDatasetId(datasetId)}>Khám phá dataset trong Chat</button>
+          {!canEdit && <span className="hint">Bạn có thể xem báo cáo và dashboard; gửi yêu cầu AI cần quyền phân tích.</span>}
+        </div>
+        {dashboards.length > 0 && <label className="chat-dashboard-picker">Dashboard đã lưu
+          <select value={dashboardId && dashboards.some(dashboard => dashboard.id === dashboardId) ? dashboardId : ''}
+            onChange={event => {
+              if (event.target.value) openDashboard(event.target.value, event.currentTarget)
+              else closeDashboard()
+            }}>
+            <option value="">Chọn dashboard đã lưu</option>
+            {dashboards.map(dashboard => <option key={dashboard.id} value={dashboard.id}>{dashboard.name}</option>)}
+          </select>
+        </label>}
 
         {!selectedConv ? (
           <div className="chat-empty">
@@ -177,7 +229,8 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
               {selectedConv.messages.length === 0 ? (
                 <div className="chat-welcome">
                   <p>Xin chào! Tôi có thể giúp bạn phân tích dữ liệu từ dataset <strong>{selectedDataset?.name}</strong>.</p>
-                  <p className="muted">Ví dụ: "Tổng doanh thu là bao nhiêu?" hoặc "Cho tôi xem doanh thu theo vùng"</p>
+                  <p className="muted">Hỏi về chất lượng, thống kê, tương quan, ngoại lệ, kiểm định hoặc yêu cầu tạo dashboard. Kết quả và thao tác đều ở trong Chat.</p>
+                  <div className="actions">{['Dataset này có bao nhiêu dòng, cột và giá trị thiếu?', 'Phát hiện xu hướng và bất thường từ dataset.', 'Tạo dashboard tổng quan từ dataset.'].map(prompt => <button key={prompt} className="secondary-button" disabled={!canEdit || busy} onClick={() => setMessage(prompt)}>{prompt}</button>)}</div>
                 </div>
               ) : (
                 selectedConv.messages.map(msg => (
@@ -185,7 +238,11 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
                     <div className="message-header">
                       <small>{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</small>
                     </div>
-                    {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json} openDashboard={openDashboard} /> : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
+                    {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json}
+                      datasetId={selectedConv.dataset_id} datasets={datasets} onOpenReport={setReportDatasetId}
+                      verification={canEdit ? { conversationId: selectedConv.id, messageId: msg.id } : undefined}
+                      openDashboard={openDashboard} dashboardVersions={dashboardVersions} />
+                      : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
                   </div>
                 ))
               )}
@@ -218,7 +275,14 @@ export function ChatPage({ datasets, canEdit, done, openDashboard }: { datasets:
         {status && <p className="inline-status">{status}</p>}
       </section>
 
-      {!sidebarHidden && (
+      {reportDatasetId && <ExplorationReportDialog datasetId={reportDatasetId} onClose={() => setReportDatasetId(null)} />}
+      {dashboardId && <ChatDashboardPanel key={`${dashboardId}:${dashboardVersions[dashboardId] ?? 0}`} id={dashboardId} datasets={datasets} charts={charts}
+        onClose={closeDashboard} onDeleted={() => setDashboardId(null)} leaveGuard={leaveDashboard} done={message => {
+          setDashboardVersions(versions => ({ ...versions, [dashboardId]: (versions[dashboardId] ?? 0) + 1 }))
+          done(message)
+        }} />}
+
+      {showSidebar && (
         <section className="surface chat-conversations-sidebar">
           <div className="panel-head">
             <SectionTitle label="Cuộc hội thoại" count={conversations.length} />
