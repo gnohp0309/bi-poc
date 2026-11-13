@@ -15,7 +15,8 @@ export type AnalysisResult = {
   warnings: string[]; conclusion?: string; reason?: string; data?: ResultTable; charts: ChartData[]
   provenance?: { engine?: string; version?: string; sampled?: boolean; sampleSize?: ResultValue; missingPolicy?: string; scope?: string }
 }
-export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; dashboardId?: string; dashboardExport?: DashboardExportFormat; explorationDatasetId?: string; canVerify?: boolean; problems: string[] }
+type ScalarAnswer = { aggregate: string; column: string; value: ResultValue }
+export type ParsedChatResult = { result?: AnalysisResult; table?: ResultTable; scalar?: ScalarAnswer; dashboardId?: string; dashboardExport?: DashboardExportFormat; explorationDatasetId?: string; canVerify?: boolean; problems: string[] }
 type Obj = Record<string, unknown>
 const object = (v: unknown): v is Obj => v !== null && typeof v === 'object' && !Array.isArray(v)
 const string = (v: unknown): string | undefined => typeof v === 'string' && v.trim() ? v : undefined
@@ -34,6 +35,49 @@ export function parseResultTable(v: unknown): ResultTable | undefined {
   if (v.rows.some(r => !object(r) || columns.some(c => r[c] !== undefined && r[c] !== null && typeof r[c] !== 'string' && typeof r[c] !== 'boolean' && !(typeof r[c] === 'number' && Number.isFinite(r[c]))))) return undefined
   return { columns, rows: v.rows.slice(0, 500) as ResultTable['rows'], receivedRows: v.rows.length, truncated: v.truncated === true || v.rows.length > 500 }
 }
+
+function scalarAnswer(config: Obj, table?: ResultTable): ScalarAnswer | undefined {
+  if (!table || table.truncated || table.rows.length !== 1 || table.columns.length !== 1 ||
+      !Array.isArray(config.metrics) || config.metrics.length !== 1 ||
+      (config.groupBy !== undefined && config.groupBy !== null && (!Array.isArray(config.groupBy) || config.groupBy.length))) return undefined
+  const [metric] = config.metrics
+  if (!object(metric) || typeof metric.column !== 'string' || metric.alias !== table.columns[0] ||
+      !member(metric.aggregate, ['sum', 'avg', 'count', 'count_distinct', 'min', 'max'] as const)) return undefined
+  const raw = table.rows[0][table.columns[0]]
+  const numeric = value(raw)
+  if (numeric === null && raw !== null) return undefined
+  return { aggregate: metric.aggregate, column: metric.column, value: numeric }
+}
+
+export function formatChatNumber(v: ResultValue): string {
+  if (v === null) return '—'
+  const match = /^([+-]?\d+)(?:\.(\d+))?$/.exec(String(v))
+  if (!match) return String(v)
+  const [, integer, fraction] = match
+  const whole = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return fraction ? whole + ',' + fraction : whole
+}
+
+export function describeScalarAnswer(scalar: ScalarAnswer, aliasesJson?: string): { label: string; value: string | null } {
+  let aliases: unknown
+  try { aliases = JSON.parse(aliasesJson || '{}') } catch { /* Older datasets may not have usable aliases. */ }
+  const column = scalar.column.replace(/^c_/, '')
+  const translations: Record<string, string> = { revenue: 'doanh thu', cost: 'chi phí', quantity: 'số lượng' }
+  const alias = object(aliases) && Object.hasOwn(aliases, scalar.column) ? string(aliases[scalar.column]) : undefined
+  const label = (alias && alias !== column && alias !== scalar.column ? alias : translations[column] || alias || column).replace(/_/g, ' ')
+  const descriptions: Record<string, string> = {
+    sum: 'Tổng ' + label,
+    avg: label + ' trung bình',
+    count: scalar.column === '*' ? 'Số dòng phù hợp' : 'Số giá trị có dữ liệu ở cột ' + label,
+    count_distinct: 'Số giá trị khác nhau ở cột ' + label,
+    min: 'Giá trị nhỏ nhất của ' + label,
+    max: 'Giá trị lớn nhất của ' + label,
+  }
+  const description = descriptions[scalar.aggregate]
+  return { label: description.charAt(0).toLocaleUpperCase('vi-VN') + description.slice(1),
+    value: scalar.value === null ? null : formatChatNumber(scalar.value) }
+}
+
 const chartTypes = ['bar', 'line', 'pie', 'donut', 'kpi', 'histogram', 'scatter', 'heatmap', 'map', 'stacked-bar', 'stacked-area'] as const
 function chart(v: unknown): ChartData | undefined {
   if (!object(v) || !member(v.chartType, chartTypes) || !Array.isArray(v.rows) || v.rows.length > 500 || !v.rows.every(object)) return undefined
@@ -65,6 +109,7 @@ export function parseChatResult(metadataJson: string): ParsedChatResult {
     parsed.table = parseResultTable(metadata.data)
     if (!parsed.table) parsed.problems.push('Bảng kết quả không hợp lệ nên chưa thể hiển thị.')
   }
+  if (object(metadata.query_config)) parsed.scalar = scalarAnswer(metadata.query_config, parsed.table)
   const raw = metadata.analysis_result
   if (raw === undefined) return parsed
   if (!object(raw) || raw.schemaVersion !== 1 || !member(raw.kind, ['query', 'statistical_test']) || !member(raw.status, ['success', 'insufficient_data', 'not_applicable', 'error', 'needs_confirmation'])) {

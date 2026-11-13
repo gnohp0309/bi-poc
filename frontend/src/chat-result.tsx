@@ -4,7 +4,7 @@ import { ChartCanvas } from './ui'
 import { ChatDashboard } from './chat-dashboard'
 import { ChatVerification } from './chat-verification'
 import type { OpenChatDashboard } from './chat-dashboard'
-import { parseChatResult, formatResultValue as fmt } from './chat-result-model'
+import { describeScalarAnswer, parseChatResult, formatResultValue as fmt } from './chat-result-model'
 import type { AnalysisResult, Measurement, ResultTable } from './chat-result-model'
 import './chat-result.css'
 
@@ -20,26 +20,34 @@ export function ChatResult({ metadataJson, content, openDashboard, dashboardVers
   const parsed = useMemo(() => parseChatResult(metadataJson), [metadataJson])
   const result = parsed.result
   const reportId = parsed.explorationDatasetId
+  const table = result?.data || parsed.table
+  const scalar = parsed.scalar && describeScalarAnswer(parsed.scalar, datasets.find(d => d.id === datasetId)?.aliases_json)
+  const answer = result?.narrative || (result?.kind === 'query' && result.summary) || content
   return <>
-    {!result ? <Text content={content} /> : result.narrative ? <Text content={result.narrative} /> :
-      <details className="chat-result-original"><summary>Xem câu trả lời dạng văn bản</summary><Text content={content} /></details>}
-    {parsed.problems.length > 0 && <div className="chat-result-warning" role="status">{parsed.problems.map((p, i) => <p key={i}>{p}</p>)}</div>}
-    <div className="message-meta">
-      {result && <AnalysisResultView result={result} />}
-      {!result && parsed.table && <ResultTableView table={parsed.table} />}
-      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} datasets={datasets} exportFormat={parsed.dashboardExport} />}
-    </div>
+    {scalar ? <div className="message-content"><p>{scalar.value === null
+      ? <>{scalar.label} chưa có giá trị để hiển thị.</>
+      : <>{scalar.label} là <strong>{scalar.value}</strong>.</>}</p></div> : <Text content={answer} />}
     {verification && parsed.canVerify && <ChatVerification {...verification} dashboard={!!parsed.dashboardId} />}
+    {parsed.problems.length > 0 && <div className="chat-result-warning" role="status">{parsed.problems.map((p, i) => <p key={i}>{p}</p>)}</div>}
+    {scalar && table && <details className="chat-result-original">
+      <summary>Xem bảng số liệu</summary>
+      <ResultTableView table={table} />
+    </details>}
+    {scalar && result?.warnings.map((warning, i) => <p className="chat-result-warning" key={i}>{warning}</p>)}
+    {(!scalar && (result || parsed.table) || parsed.dashboardId) && <div className="message-meta">
+      {!scalar && (result ? <AnalysisResultView result={result} hideSummary={answer === result.summary} /> : parsed.table && <ResultTableView table={parsed.table} />)}
+      {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} datasets={datasets} exportFormat={parsed.dashboardExport} />}
+    </div>}
     {reportId && reportId.toLowerCase() === datasetId?.toLowerCase() && onOpenReport &&
       <button className="secondary-button chat-exploration-button" onClick={() => onOpenReport(reportId)}>Xem báo cáo chi tiết</button>}
   </>
 }
 
-export function AnalysisResultView({ result: r }: { result: AnalysisResult }) {
+export function AnalysisResultView({ result: r, hideSummary = false }: { result: AnalysisResult; hideSummary?: boolean }) {
   const assumptionsUncertain = r.assumptions.some(a => a.status === 'failed' || a.status === 'not_checked')
   return <section className="chat-analysis-result" aria-label={r.kind === 'statistical_test' ? 'Kết quả kiểm định thống kê' : 'Kết quả phân tích dữ liệu'}>
     <div className="chat-result-heading"><h3>{r.title}</h3><span className={`chat-result-badge ${r.status}`}>{stateLabels[r.status]}</span></div>
-    {r.summary && <div>{r.summary.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
+    {r.summary && !hideSummary && <div>{r.summary.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
     {r.status === 'needs_confirmation' && r.sample && <dl className="chat-result-facts">
       <div><dt>Số dòng đầu vào</dt><dd>{fmt(r.sample.total)}</dd></div>
       <div><dt>Số dòng hợp lệ</dt><dd>{fmt(r.sample.used)}</dd></div>
