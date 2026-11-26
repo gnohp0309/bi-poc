@@ -85,7 +85,7 @@ def run():
             return cid,response
         cid,answer=ask("total")
         assert answer["data"]["rows"][0]["revenue"]==32.7,answer
-        assert "32.7" in answer["answer"],answer
+        assert "32,7" in answer["answer"],answer
         assert answer['narrative_source']=='engine', answer
         presentation = answer["analysis_result"]
         assert presentation["schemaVersion"] == 1 and presentation["kind"] == "query"
@@ -100,15 +100,16 @@ def run():
         assert json.loads(saved["messages"][-1]["metadata_json"])["data"]["rows"][0]["average"]==16.35
         assert len(call("/chat/conversations",token=admin))>0
         _,answer=ask("decimal")
-        assert "16.35" in answer["answer"]
+        assert "16,35" in answer["answer"]
         _,answer=ask("literal")
         assert "$5\\shop{{total}}" in answer["answer"],answer
         _,answer=ask("fake-answer")
-        assert "999999999999" not in answer["answer"] and "32.7" in answer["answer"],answer
+        assert "999999999999" not in answer["answer"] and "32,7" in answer["answer"],answer
         ask("total",token=analyst)
         for dataset_id in (empty,nulls): ask("schema-check",dataset_id)
         _,answer=ask("total",empty)
-        assert answer["data"]["rows"][0]["revenue"] is None and "NULL" in answer["answer"]
+        assert answer["data"]["rows"][0]["revenue"] is None
+        assert "chưa có giá trị" in answer["answer"],answer
         _,answer=ask("clarify")
         assert answer["intent"]=="clarify"
         before=len(call("/dashboards",token=admin))
