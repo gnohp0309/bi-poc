@@ -1,24 +1,33 @@
 import { useCallback, useEffect, useState } from 'react'
+import { ArrowRight, ArrowUpRight, ChartColumn, Database, FileUp, House, LayoutDashboard, LogOut, MessageSquare, ShieldCheck, Sparkles, Table2, Terminal } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { api } from './api'
 import type { Actor, Chart, Connection, Dashboard, Dataset } from './api'
 import { ConnectionsPage, DatasetsPage, SqlPage, ChartsPage, SecurityPage } from './screens'
 import { DashboardsPage, PublicDashboard } from './dashboards'
 import { ImportsPage } from './imports'
-import { ChatPage } from './chat'
+import { analysisPrompts, ChatPage } from './chat'
 import { Empty, SectionTitle } from './ui'
 
 type Page = 'overview' | 'imports' | 'connections' | 'datasets' | 'sql' | 'charts' | 'dashboards' | 'chat' | 'security'
 
-const nav: { id: Page; label: string; number: string }[] = [
-  { id: 'overview', label: 'Tổng quan', number: '00' },
-  { id: 'imports', label: 'Tải file & phân tích', number: '01' },
-  { id: 'connections', label: 'Kết nối dữ liệu', number: '02' },
-  { id: 'datasets', label: 'Datasets', number: '03' },
-  { id: 'sql', label: 'SQL Lab', number: '04' },
-  { id: 'charts', label: 'Chart Builder', number: '05' },
-  { id: 'dashboards', label: 'Dashboards', number: '06' },
-  { id: 'chat', label: 'Chat AI', number: '07' },
-  { id: 'security', label: 'Bảo mật & nhật ký', number: '08' }
+const nav: Record<Page, { label: string; icon: LucideIcon }> = {
+  overview: { label: 'Tổng quan', icon: House },
+  chat: { label: 'Chat AI', icon: MessageSquare },
+  imports: { label: 'Tải file & phân tích', icon: FileUp },
+  connections: { label: 'Kết nối dữ liệu', icon: Database },
+  datasets: { label: 'Datasets', icon: Table2 },
+  sql: { label: 'SQL Lab', icon: Terminal },
+  charts: { label: 'Chart Builder', icon: ChartColumn },
+  dashboards: { label: 'Dashboards', icon: LayoutDashboard },
+  security: { label: 'Bảo mật & nhật ký', icon: ShieldCheck },
+}
+
+const navigationGroups: { label?: string; pages: Page[] }[] = [
+  { pages: ['overview', 'chat'] },
+  { label: 'Dữ liệu', pages: ['imports', 'connections', 'datasets', 'sql'] },
+  { label: 'Báo cáo', pages: ['charts', 'dashboards'] },
+  { label: 'Quản trị', pages: ['security'] },
 ]
 
 const descriptions: Record<Page, string> = {
@@ -39,6 +48,7 @@ export default function App() {
   const [actor, setActor] = useState<Actor | null>(null)
   const [page, setPage] = useState<Page>('overview')
   const [dashboardTarget, setDashboardTarget] = useState('')
+  const [chatDraft, setChatDraft] = useState('')
   const [connections, setConnections] = useState<Connection[]>([])
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [charts, setCharts] = useState<Chart[]>([])
@@ -73,33 +83,57 @@ export default function App() {
   }
   function done(message: string) { setNotice(message); reload().catch(error => setNotice(error.message)) }
 
+  function go(next: Page, target = '') {
+    if (page !== next && !window.dispatchEvent(new Event('bi-poc-before-navigate', { cancelable: true }))) return
+    if (next === 'chat' && page !== next) setChatDraft(target)
+    if (next === 'dashboards' && page !== next) setDashboardTarget(target)
+    setPage(next)
+    setNotice('')
+  }
+
   if (share) return <PublicDashboard token={share} />
   if (!token || !actor) return <Login onLogin={login} />
-  const active = nav.find(item => item.id === page)!
+  const active = nav[page]
   return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">P</div><div><strong>Pythera</strong><span>Data Studio · POC</span></div></div>
-      <div className="sidebar-label">KHÔNG GIAN LÀM VIỆC</div>
-      <nav aria-label="Điều hướng chính">{nav.filter(item => item.id !== 'security' || actor.role === 'ADMIN').map(item =>
-        <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => { if (page !== item.id && !window.dispatchEvent(new Event('bi-poc-before-navigate', { cancelable: true }))) return; setPage(item.id); setNotice('') }}>
-          <span className="nav-index">{item.number}</span><span>{item.label}</span>
-        </button>)}</nav>
-      <div className="sidebar-foot"><span className="live-dot" /> Chạy trên máy cục bộ <small>PostgreSQL · Spring Boot</small></div>
+    <a className="workspace-skip" href="#workspace-content">Đến nội dung</a>
+    <aside className="sidebar workspace-rail">
+      <button className="brand workspace-brand" onClick={() => go('overview')}>
+        <span className="brand-mark" aria-hidden="true">P</span>
+        <span><strong>Pythera</strong><small>Data Studio</small></span>
+      </button>
+      <nav aria-label="Điều hướng chính">{navigationGroups
+        .filter(group => group.label !== 'Quản trị' || actor.role === 'ADMIN')
+        .map(group => <div className="workspace-nav-group" key={group.label ?? 'main'}>
+          {group.label && <span className="workspace-nav-label">{group.label}</span>}
+          {group.pages.map(item => {
+            const { label, icon: Icon } = nav[item]
+            return <button key={item} className={page === item ? 'nav-item active' : 'nav-item'}
+              aria-current={page === item ? 'page' : undefined} onClick={() => go(item)}>
+              <Icon size={17} strokeWidth={1.7} aria-hidden="true" /><span>{label}</span>
+            </button>
+          })}
+        </div>)}</nav>
+      <div className="workspace-foot"><span className="live-dot" /> Data Studio · POC</div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><span>PYTHERA AI LAB <b>/</b> {active.label.toUpperCase()}</span><div className="account"><span className="avatar">{actor.username.slice(0, 1).toUpperCase()}</span><span>{actor.username}<small>{actor.role}</small></span><button className="text-button" onClick={logout}>Đăng xuất</button></div></header>
-      <main className="main-content">
-        <div className="page-heading"><div><span className="eyebrow">BI DASHBOARD / BẢN THỬ NGHIỆM</span><h1>{active.label}</h1><p>{descriptions[page]}</p></div><span className="page-number">{active.number} / 08</span></div>
+      <header className="topbar workspace-topbar">
+        <div className="workspace-path"><span>Không gian làm việc</span><span aria-hidden="true">/</span><strong>{active.label}</strong></div>
+        <div className="account"><span className="avatar" aria-hidden="true">{actor.username.slice(0, 1).toUpperCase()}</span><span>{actor.username}<small>{actor.role}</small></span>
+          <button className="workspace-logout" onClick={logout} aria-label="Đăng xuất" title="Đăng xuất"><LogOut size={16} aria-hidden="true" /></button>
+        </div>
+      </header>
+      <main id="workspace-content" tabIndex={-1} className={`main-content workspace-content workspace-${page}`}>
+        {page !== 'chat' && <div className="page-heading workspace-heading"><div><h1>{active.label}</h1><p>{descriptions[page]}</p></div></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
         {actor.role === 'VIEWER' && <div className="notice" role="status">Chế độ chỉ xem: tài khoản này không thể tạo, sửa hoặc xóa dữ liệu.</div>}
-        {page === 'overview' && <Overview counts={[connections.length,datasets.length,charts.length,dashboards.length]} go={setPage} dashboards={dashboards} />}
-        {page === 'imports' && <ImportsPage canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => { setDashboardTarget(id); setPage('dashboards') }} />}
+        {page === 'overview' && <Overview counts={[connections.length, datasets.length, charts.length, dashboards.length]} go={go} dashboards={dashboards} canEdit={actor.role !== 'VIEWER'} />}
+        {page === 'imports' && <ImportsPage canEdit={actor.role !== 'VIEWER'} done={done} openDashboard={id => go('dashboards', id)} />}
         {page === 'connections' && <ConnectionsPage connections={connections} done={done} />}
         {page === 'datasets' && <DatasetsPage connections={connections} datasets={datasets} done={done} />}
         {page === 'sql' && <SqlPage connections={connections} done={done} />}
         {page === 'charts' && <ChartsPage canEdit={actor.role !== 'VIEWER'} datasets={datasets} charts={charts} done={done} />}
         {page === 'dashboards' && <DashboardsPage datasets={datasets} canEdit={actor.role !== 'VIEWER'} dashboards={dashboards} charts={charts} done={done} initialId={dashboardTarget} />}
-        {page === 'chat' && <ChatPage datasets={datasets} charts={charts} dashboards={dashboards} canEdit={actor.role !== 'VIEWER'} done={done} />}
+        {page === 'chat' && <ChatPage datasets={datasets} charts={charts} dashboards={dashboards} canEdit={actor.role !== 'VIEWER'} done={done} initialDraft={chatDraft} />}
         {page === 'security' && <SecurityPage />}
       </main>
     </div>
@@ -120,10 +154,47 @@ function Login({ onLogin }: { onLogin: (token: string, user: Actor) => void }) {
     <section className="login-form-side"><form className="login-form" onSubmit={submit}><span className="eyebrow">ĐĂNG NHẬP</span><h2>Chào mừng trở lại</h2><p>Truy cập không gian phân tích dữ liệu.</p><label>Tên đăng nhập<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required /></label><label>Mật khẩu<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>{error && <div className="form-error">{error}</div>}<button className="primary-button full" disabled={busy}>{busy ? 'Đang kiểm tra…' : 'Đăng nhập'}</button><small>Tài khoản demo được ghi trong README của dự án.</small></form></section></div>
 }
 
-function Overview({ counts, go, dashboards }: { counts: number[]; go: (page: Page) => void; dashboards: Dashboard[] }) {
+const overviewMetrics = [
+  { label: 'Nguồn dữ liệu', page: 'connections', icon: Database },
+  { label: 'Datasets', page: 'datasets', icon: Table2 },
+  { label: 'Biểu đồ', page: 'charts', icon: ChartColumn },
+  { label: 'Dashboards', page: 'dashboards', icon: LayoutDashboard },
+] as const
+
+function Overview({ counts, go, dashboards, canEdit }: { counts: number[]; go: (page: Page, target?: string) => void; dashboards: Dashboard[]; canEdit: boolean }) {
   return <div className="overview">
-    <div className="metric-grid">{[['Nguồn dữ liệu',counts[0]],['Datasets',counts[1]],['Biểu đồ',counts[2]],['Dashboards',counts[3]]].map(([label,value]) => <div className="metric-tile" key={label}><span>{label}</span><strong>{value}</strong><small>Đã lưu trong bản demo</small></div>)}</div>
-    <div className="overview-grid"><section className="surface flow-panel"><SectionTitle label="Luồng xử lý" /><p className="muted">Tải CSV để tạo dashboard tự động; hoặc kết nối PostgreSQL để tự xây dựng phân tích.</p><div className="flow-list">{[['01','Tải CSV','Kiểm tra định dạng và nhập dữ liệu'],['02','Phân tích','Đếm dòng, ô trống, sai kiểu và tổng số'],['03','Dataset','Bảng PostgreSQL hoặc câu SQL'],['04','Biểu đồ','Tạo tự động hoặc cấu hình thủ công'],['05','Dashboard','Sắp xếp, lọc và chia sẻ']].map(item => <div className="flow-row" key={item[0]}><span>{item[0]}</span><strong>{item[1]}</strong><small>{item[2]}</small></div>)}</div><button className="secondary-button" onClick={() => go('imports')}>Tải CSV và xem phân tích <span>↗</span></button></section>
-      <section className="surface latest-panel"><SectionTitle label="Dashboard gần đây" count={dashboards.length} />{dashboards.length ? dashboards.slice(0,4).map(item => <button className="list-row clickable" key={item.id} onClick={() => go('dashboards')}><span><strong>{item.name}</strong><small>{item.chart_count} biểu đồ</small></span><span className="row-arrow">↗</span></button>) : <Empty title="Chưa có dashboard" text="Tạo kết nối và biểu đồ để hoàn thiện luồng demo." />}<button className="text-link" onClick={() => go('dashboards')}>Mở khu vực dashboard ↗</button></section></div>
+    {canEdit && <section className="overview-hero" aria-label="Bắt đầu phân tích">
+      <div className="overview-intro">
+        <span className="overview-spark" aria-hidden="true"><Sparkles size={21} /></span>
+        <h2>Phân tích dữ liệu bằng Chat AI</h2>
+        <p>Chọn dataset, đặt câu hỏi và xem biểu đồ, bảng số liệu ngay trong hội thoại.</p>
+        <div className="overview-actions">
+          <button className="overview-chat-button" onClick={() => go('chat')}>Mở Chat AI <ArrowRight size={17} aria-hidden="true" /></button>
+          <button className="overview-import-button" onClick={() => go('imports')}><FileUp size={17} aria-hidden="true" /> Tải file CSV</button>
+        </div>
+      </div>
+      <div className="overview-prompts">
+        <h3>Bắt đầu với một câu hỏi</h3>
+        {analysisPrompts.map(({ label, question, icon: Icon }) => <button key={label} onClick={() => go('chat', question)}>
+          <Icon size={17} aria-hidden="true" /><span>{label}</span><ArrowUpRight size={16} aria-hidden="true" />
+        </button>)}
+      </div>
+    </section>}
+    <section className="overview-metrics" aria-label="Tài nguyên hiện có">
+      {overviewMetrics.map(({ label, page, icon: Icon }, index) => <button className="overview-metric" key={page} onClick={() => go(page)}>
+        <span><Icon size={17} aria-hidden="true" /> {label}</span>
+        <strong>{counts[index].toLocaleString('vi-VN')}</strong>
+        <ArrowUpRight size={15} aria-hidden="true" className="overview-metric-arrow" />
+      </button>)}
+    </section>
+    <section className="overview-recent" aria-label="Dashboard gần đây">
+      <div className="overview-recent-head"><SectionTitle label="Dashboard gần đây" />
+        <button className="text-link" onClick={() => go('dashboards')}>Xem tất cả <ArrowRight size={14} aria-hidden="true" /></button>
+      </div>
+      {dashboards.length ? dashboards.slice(0, 4).map(item => <button className="overview-dashboard" key={item.id} onClick={() => go('dashboards', item.id)}>
+        <span className="overview-dashboard-icon"><LayoutDashboard size={17} aria-hidden="true" /></span>
+        <strong>{item.name}</strong><small>{item.chart_count} biểu đồ</small><ArrowUpRight size={16} aria-hidden="true" />
+      </button>) : <Empty title="Chưa có dashboard" text="Bạn có thể tạo dashboard từ Chat AI hoặc Chart Builder." />}
+    </section>
   </div>
 }

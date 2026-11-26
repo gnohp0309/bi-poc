@@ -1,21 +1,39 @@
-import { Component, useMemo, useState } from 'react'
+import { Component, lazy, Suspense, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { ChartData } from './api'
 import { ChartCanvas } from './ui'
 import { ChatDashboard } from './chat-dashboard'
 import { ChatVerification } from './chat-verification'
 import type { OpenChatDashboard } from './chat-dashboard'
 import { describeScalarAnswer, parseChatResult, formatResultValue as fmt } from './chat-result-model'
+import type { AnalysisSuggestion } from './chat-result-model'
 import type { AnalysisResult, Measurement, ResultTable } from './chat-result-model'
+import { openUiChartProgram, openUiTableProgram } from './chat-openui-program'
 import './chat-result.css'
+
+const OpenUiResult = lazy(() => import('./chat-openui-renderer'))
+
+class OpenUiBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  render() { return this.state.failed ? this.props.fallback : this.props.children }
+}
+
+function ResultProgram({ program, fallback }: { program?: string; fallback: ReactNode }) {
+  return program ? <OpenUiBoundary key={program} fallback={fallback}>
+    <Suspense fallback={fallback}><OpenUiResult program={program} fallback={fallback} /></Suspense>
+  </OpenUiBoundary> : fallback
+}
 
 const stateLabels = { success: 'Đã có kết quả', insufficient_data: 'Không đủ dữ liệu', not_applicable: 'Không áp dụng', error: 'Không thực hiện được', needs_confirmation: 'Cần xác nhận thiết kế dữ liệu' }
 const assumptionLabels = { passed: 'Đạt', failed: 'Không đạt', not_checked: 'Chưa kiểm tra', not_applicable: 'Không áp dụng' }
 function Text({ content }: { content: string }) { return <div className="message-content">{content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div> }
 
-export function ChatResult({ metadataJson, content, openDashboard, dashboardVersions, datasetId, datasets = [], onOpenReport, verification }: {
+export function ChatResult({ metadataJson, content, openDashboard, dashboardVersions, datasetId, datasets = [], onOpenReport, verification, onSuggestion, pending }: {
   metadataJson: string; content: string; openDashboard: OpenChatDashboard; dashboardVersions?: Record<string, number>
   datasetId?: string; datasets?: import('./api').Dataset[]; onOpenReport?: (id: string) => void
   verification?: { conversationId: string; messageId: string }
+  onSuggestion?: (suggestion: AnalysisSuggestion) => void; pending?: boolean
 }) {
   const parsed = useMemo(() => parseChatResult(metadataJson), [metadataJson])
   const result = parsed.result
@@ -27,6 +45,7 @@ export function ChatResult({ metadataJson, content, openDashboard, dashboardVers
     {scalar ? <div className="message-content"><p>{scalar.value === null
       ? <>{scalar.label} chưa có giá trị để hiển thị.</>
       : <>{scalar.label} là <strong>{scalar.value}</strong>.</>}</p></div> : <Text content={answer} />}
+    {result?.kind === 'query' && result.method && !answer.includes(result.method) && <p className="chat-result-method"><strong>Cách tính</strong> {result.method}</p>}
     {verification && parsed.canVerify && <ChatVerification {...verification} dashboard={!!parsed.dashboardId} />}
     {parsed.problems.length > 0 && <div className="chat-result-warning" role="status">{parsed.problems.map((p, i) => <p key={i}>{p}</p>)}</div>}
     {scalar && table && <details className="chat-result-original">
@@ -35,15 +54,22 @@ export function ChatResult({ metadataJson, content, openDashboard, dashboardVers
     </details>}
     {scalar && result?.warnings.map((warning, i) => <p className="chat-result-warning" key={i}>{warning}</p>)}
     {(!scalar && (result || parsed.table) || parsed.dashboardId) && <div className="message-meta">
-      {!scalar && (result ? <AnalysisResultView result={result} hideSummary={answer === result.summary} /> : parsed.table && <ResultTableView table={parsed.table} />)}
+      {!scalar && (result ? <AnalysisResultView result={result} hideSummary={answer === result.summary} interactive={!!datasetId} />
+        : parsed.table && <ResultTableView table={parsed.table} interactive={!!datasetId} />)}
       {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} datasets={datasets} exportFormat={parsed.dashboardExport} />}
     </div>}
     {reportId && reportId.toLowerCase() === datasetId?.toLowerCase() && onOpenReport &&
       <button className="secondary-button chat-exploration-button" onClick={() => onOpenReport(reportId)}>Xem báo cáo chi tiết</button>}
+    {!!parsed.suggestions?.length && onSuggestion && <div className="chat-analysis-suggestions" role="group" aria-label="Phân tích tiếp">
+      {parsed.suggestions.map(suggestion => <button className="secondary-button" type="button" key={suggestion.id}
+        onClick={() => onSuggestion(suggestion)} disabled={pending}>{suggestion.label}</button>)}
+    </div>}
   </>
 }
 
-export function AnalysisResultView({ result: r, hideSummary = false }: { result: AnalysisResult; hideSummary?: boolean }) {
+export function AnalysisResultView({ result: r, hideSummary = false, interactive = false }: {
+  result: AnalysisResult; hideSummary?: boolean; interactive?: boolean
+}) {
   const assumptionsUncertain = r.assumptions.some(a => a.status === 'failed' || a.status === 'not_checked')
   return <section className="chat-analysis-result" aria-label={r.kind === 'statistical_test' ? 'Kết quả kiểm định thống kê' : 'Kết quả phân tích dữ liệu'}>
     <div className="chat-result-heading"><h3>{r.title}</h3><span className={`chat-result-badge ${r.status}`}>{stateLabels[r.status]}</span></div>
@@ -55,7 +81,7 @@ export function AnalysisResultView({ result: r, hideSummary = false }: { result:
       <div><dt>Số dòng ngoài nhóm đã chọn</dt><dd>{fmt(r.sample.excluded)}</dd></div>
     </dl>}
     {r.kind !== 'statistical_test' && r.assumptions.length > 0 && <div className="chat-result-section"><h4>Kiểm tra điều kiện</h4><ul className="chat-assumptions">{r.assumptions.map((a, i) => <li key={i}><strong>{a.name} · {assumptionLabels[a.status]}</strong><p>{a.detail}</p></li>)}</ul></div>}
-    {r.status !== 'success' && r.status !== 'needs_confirmation' && <div className="chat-result-warning" role="status"><strong>{stateLabels[r.status]}</strong><p>{r.reason || 'Engine chưa cung cấp đủ thông tin để thực hiện phân tích này.'}</p><p>Chưa thể đưa ra kết luận kiểm định từ kết quả này.</p></div>}
+    {r.status !== 'success' && r.status !== 'needs_confirmation' && <div className="chat-result-warning" role="status"><strong>{stateLabels[r.status]}</strong><p>{r.reason || 'Engine chưa cung cấp đủ thông tin để thực hiện phân tích này.'}</p>{r.kind === 'statistical_test' && <p>Chưa thể đưa ra kết luận kiểm định từ kết quả này.</p>}</div>}
     {r.kind === 'statistical_test' && <>
       <dl className="chat-result-facts"><div><dt>Phương pháp</dt><dd>{r.method || 'Chưa được engine cung cấp'}</dd></div><div><dt>Mức ý nghĩa α</dt><dd>{fmt(r.alpha)}</dd></div></dl>
       <div className="chat-result-section"><h4>Giả thuyết</h4><dl className="chat-result-facts"><div><dt>H0</dt><dd>{r.hypotheses?.h0 || 'Chưa được engine cung cấp'}</dd></div><div><dt>H1</dt><dd>{r.hypotheses?.h1 || 'Chưa được engine cung cấp'}</dd></div></dl></div>
@@ -71,8 +97,10 @@ export function AnalysisResultView({ result: r, hideSummary = false }: { result:
       {assumptionsUncertain && <p className="chat-result-warning">Có giả định chưa được xác nhận hoặc không đạt. Cần xem cảnh báo và phương pháp xử lý của engine trước khi sử dụng kết luận.</p>}
     </>}
     {r.warnings.length > 0 && <div className="chat-result-warning" role="status"><h4>Cảnh báo</h4><ul>{r.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div>}
-    {r.data && <ResultTableView key={JSON.stringify(r.data.columns)} table={r.data} />}
-    {r.charts.length > 0 && <div className="chat-result-section"><h4>Biểu đồ từ kết quả</h4><p className="muted">Biểu đồ dùng số liệu trả về. Nếu bảng bị giới hạn, biểu đồ cũng chỉ phản ánh phần kết quả đó.</p><div className="chat-result-charts">{r.charts.map((chart, i) => <ChartBoundary key={i}><article><h4>{chart.name || chart.chartType}</h4><ChartCanvas data={chart} /></article></ChartBoundary>)}</div></div>}
+    {interactive ? <InteractiveAnalysisData charts={r.charts} table={r.data} /> : <>
+      {r.data && <ResultTableView key={JSON.stringify(r.data.columns)} table={r.data} />}
+      {r.charts.length > 0 && <div className="chat-result-section"><h4>Biểu đồ từ kết quả</h4><p className="muted">Biểu đồ dùng số liệu trả về. Nếu bảng bị giới hạn, biểu đồ cũng chỉ phản ánh phần kết quả đó.</p><div className="chat-result-charts">{r.charts.map((chart, i) => <ChartBoundary key={i}><article><h4>{chart.name || chart.chartType}</h4><ChartCanvas data={chart} /></article></ChartBoundary>)}</div></div>}
+    </>}
     {r.kind === 'statistical_test' && <div className="chat-result-section"><h4>{r.status === 'success' ? 'Kết luận của engine' : 'Thông tin từ engine'}</h4><p>{r.conclusion || (r.status === 'success' ? 'Engine chưa cung cấp kết luận. Giao diện không tự kết luận từ p-value.' : r.reason || 'Chưa có kết luận.')}</p></div>}
     <div className="chat-result-provenance"><span>Nguồn: {r.provenance?.engine || 'Engine chưa được ghi nhận'}{r.provenance?.version ? ` · ${r.provenance.version}` : ''}</span>
       <span>{r.provenance?.sampled === true ? `Có lấy mẫu · cỡ mẫu: ${fmt(r.provenance.sampleSize)}` : r.provenance?.sampled === false ? 'Không lấy mẫu trong bước tính này' : 'Chưa có thông tin lấy mẫu'}</span>
@@ -81,22 +109,57 @@ export function AnalysisResultView({ result: r, hideSummary = false }: { result:
     </div>
   </section>
 }
+
+function InteractiveAnalysisData({ charts, table }: { charts: ChartData[]; table?: ResultTable }) {
+  const [view, setView] = useState<'chart' | 'table'>(charts.length ? 'chart' : 'table')
+  const [chartIndex, setChartIndex] = useState(0)
+  const chart = charts[chartIndex] || charts[0]
+  const program = useMemo(() => chart && openUiChartProgram(chart), [chart])
+  if (!table && !chart) return null
+  const showChart = !!chart && (view === 'chart' || !table)
+  const fallback = chart && <ChartBoundary key={chartIndex}><ChartCanvas data={chart} /></ChartBoundary>
+  return <div className="chat-analysis-data">
+    {chart && table && <div className="chat-analysis-switch" role="group" aria-label="Cách hiển thị kết quả">
+      <button type="button" aria-pressed={showChart} onClick={() => setView('chart')}>Biểu đồ</button>
+      <button type="button" aria-pressed={!showChart} onClick={() => setView('table')}>Bảng số liệu</button>
+    </div>}
+    {showChart ? <section className="chat-openui-chart" aria-label="Biểu đồ từ kết quả">
+      <div className="chat-openui-chart-header">
+        <h4>{chart.name || 'Biểu đồ từ kết quả'}</h4>
+        {charts.length > 1 && <select aria-label="Chọn biểu đồ" value={chartIndex}
+          onChange={event => setChartIndex(Number(event.target.value))}>
+          {charts.map((item, index) => <option key={index} value={index}>{item.name || `Biểu đồ ${index + 1}`}</option>)}
+        </select>}
+      </div>
+      <ResultProgram program={program} fallback={fallback} />
+      {chart.truncated && <p className="chat-result-warning" role="status">Biểu đồ hiển thị phần kết quả được trả về.</p>}
+    </section> : table && <ResultTableView key={JSON.stringify(table.columns)} table={table} interactive hideHeading={!!chart} />}
+  </div>
+}
 function fieldReason(m?: { status: Measurement['status']; reason?: string }): string {
   return m?.reason || (m?.status === 'not_applicable' ? 'Không áp dụng cho phương pháp này' : m?.status === 'not_computed' ? 'Chưa được engine tính' : 'Chưa được engine cung cấp')
 }
 function Metric({ title, measurement: m }: { title: string; measurement?: Measurement }) {
   return <div className="chat-test-metric"><span>{title}</span><strong>{m?.status === 'available' ? fmt(m.value) : '—'}</strong>{(m?.status !== 'available' || m.value === null) && <small>{fieldReason(m)}</small>}</div>
 }
-export function ResultTableView({ table }: { table: ResultTable }) {
+export function ResultTableView({ table, interactive = false, hideHeading = false }: {
+  table: ResultTable; interactive?: boolean; hideHeading?: boolean
+}) {
   const [page, setPage] = useState(0)
   const pages = Math.max(1, Math.ceil(table.rows.length / 25))
   const current = Math.min(page, pages - 1)
   const start = current * 25
-  return <div className="chat-result-section"><h4>Bảng số liệu</h4>
+  const visibleRows = useMemo(() => table.rows.slice(start, start + 25), [table.rows, start])
+  const program = useMemo(() => interactive && openUiTableProgram(table.columns, visibleRows),
+    [interactive, table.columns, visibleRows])
+  const fallback = <div className="table-scroll" tabIndex={0} aria-label="Bảng kết quả phân tích"><table><thead><tr>{table.columns.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>{visibleRows.map((row, i) => <tr key={start + i}>{table.columns.map(c => <td key={c}>{!Object.hasOwn(row, c) ? '—' : row[c] === null ? 'NULL' : String(row[c])}</td>)}</tr>)}</tbody></table></div>
+  return <div className="chat-result-section">{!hideHeading && <h4>Bảng số liệu</h4>}
     {table.truncated && <p className="chat-result-warning" role="status">Kết quả đã giới hạn. Bảng và biểu đồ không đại diện cho toàn bộ dòng/nhóm nguồn.{table.receivedRows > 500 && ` Chỉ hiển thị 500/${table.receivedRows} dòng đã nhận.`}</p>}
     {!table.rows.length ? <p className="muted">Không có dòng kết quả phù hợp.</p> : <>
-      <div className="table-scroll" tabIndex={0} aria-label="Bảng kết quả phân tích"><table><thead><tr>{table.columns.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>{table.rows.slice(start, start + 25).map((row, i) => <tr key={start + i}>{table.columns.map(c => <td key={c}>{!Object.hasOwn(row, c) ? '—' : row[c] === null ? 'NULL' : String(row[c])}</td>)}</tr>)}</tbody></table></div>
-      <div className="chat-result-pagination"><span>Dòng {start + 1}–{Math.min(start + 25, table.rows.length)} / {table.rows.length} dòng kết quả</span><div><button type="button" className="secondary-button" disabled={current === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>Trước</button><button type="button" className="secondary-button" disabled={current + 1 >= pages} onClick={() => setPage(p => p + 1)}>Sau</button></div></div>
+      {program ? <div className="chat-openui-table" tabIndex={0} role="region" aria-label="Bảng kết quả phân tích">
+        <ResultProgram program={program} fallback={fallback} />
+      </div> : fallback}
+      <div className="chat-result-pagination"><span>Dòng {start + 1}–{Math.min(start + 25, table.rows.length)} / {table.rows.length} dòng kết quả</span>{(pages > 1 || !interactive) && <div><button type="button" className="secondary-button" disabled={current === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>Trước</button><button type="button" className="secondary-button" disabled={current + 1 >= pages} onClick={() => setPage(p => p + 1)}>Sau</button></div>}</div>
     </>}
   </div>
 }

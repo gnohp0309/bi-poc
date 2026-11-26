@@ -21,7 +21,21 @@
 .chat-result-warning{background:#fff8e8;border-left:3px solid #c49d4f;padding:12px;margin:12px 0;font-size:12px;line-height:1.7;color:#705321;overflow-wrap:anywhere}.chat-result-warning p:last-child{margin-bottom:0}.chat-result-warning ul{padding-left:18px;margin:0}
 .chat-result-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.chat-result-charts article{border:1px solid #e5eae3;border-radius:6px;padding:14px;min-width:0}.chat-result-charts .chart-canvas{height:270px}
 .chat-result-provenance{display:flex;flex-direction:column;gap:5px;margin-top:20px;padding-top:12px;border-top:1px solid #e5eae3;font-size:10px;color:#718477}
+.chat-result-method{margin:8px 0;font-size:12px;line-height:1.5;color:#405b4d;overflow-wrap:anywhere}
 .chat-result-pagination{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;font-size:11px;margin-top:12px}.chat-result-pagination>div{display:flex;gap:8px}
+.chat-analysis-data{min-width:0;margin-top:20px;border-top:1px solid #e5eae3;padding-top:12px}
+.chat-analysis-switch{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px}
+.chat-analysis-switch button{min-height:35px;padding:6px 12px;border:1px solid transparent;border-radius:6px;background:transparent;color:#466355;font-size:12px;font-weight:700}
+.chat-analysis-switch button:hover{background:#f5f7f3}
+.chat-analysis-switch button[aria-pressed="true"]{background:#edf3ec;border-color:#dce6dc;color:#244438}
+.chat-analysis-data>.chat-result-section{margin-top:0;padding-top:0;border:0}
+.chat-openui-chart{min-width:0}
+.chat-openui-chart-header{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-bottom:10px}
+.chat-openui-chart-header h4{margin:0;font-size:13px}
+.chat-openui-chart-header select{width:auto;max-width:100%;min-height:32px;padding:5px 8px;margin:0;font-size:12px}
+.chat-openui-chart .chart-canvas{height:260px}
+.chat-openui-table{max-width:100%;min-width:0;overflow:auto;font-variant-numeric:tabular-nums}
+.chat-analysis-switch button:focus-visible,.chat-openui-table:focus-visible{outline:2px solid #42745e;outline-offset:2px}
 .chat-result-original{font-size:11px;color:#637d6c}.chat-result-original summary{cursor:pointer;padding:8px 0}.chat-result-original .message-content{white-space:normal}
 .chat-verification-action {
   display: flex;
@@ -41,6 +55,7 @@
   font-weight: 700;
 }
 .chat-verify-button:hover { background: #edf3ec; border-color: #dce6dc; }
+.chat-analysis-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chat-verify-button:focus-visible, .chat-verification-panel button:focus-visible {
   outline: 2px solid #42745e;
   outline-offset: 2px;

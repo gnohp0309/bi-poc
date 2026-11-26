@@ -9,14 +9,18 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@openuidev/intelligent-ui-library": "0.0.3",
+    "@openuidev/react-lang": "1.2.0",
     "echarts": "^6.1.0",
     "exceljs": "^4.4.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
+    "lucide-react": "0.562.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/node": "22.20.7",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.9.0",

@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from app.engine.business_revenue import business_plan
 
 router = APIRouter(tags=["Legacy BI Analysis"])
 
@@ -26,7 +27,7 @@ class Group(StrictModel):
 
 class Metric(StrictModel):
     column: str
-    aggregate: Literal["sum", "avg", "min", "max", "count", "count_distinct"]
+    aggregate: Literal["sum", "avg", "min", "max", "count", "count_distinct", "count_blank", "count_invalid"]
     alias: str
 
 
@@ -63,6 +64,8 @@ class HistoryMessage(StrictModel):
     content: str = Field(max_length=4000)
     query_config: AnalysisConfig | None = None
     statistics_config: dict | None = None
+    intent: str | None = Field(default=None, max_length=40)
+    branch_focus: str | None = Field(default=None, max_length=500)
     result_context: str | None = Field(default=None, max_length=1800)
 
 
@@ -98,12 +101,12 @@ class ChartSpec(StrictModel):
 
 
 class StatisticsConfig(StrictModel):
-    operation: Literal["descriptive", "correlation", "outlier", "shapiro_wilk", "independent_ttest", "paired_ttest", "anova", "chi_square", "mann_whitney", "kruskal_wallis", "auto_compare", "insights"]
+    operation: Literal["descriptive", "correlation", "outlier", "shapiro_wilk", "independent_ttest", "paired_ttest", "anova", "chi_square", "mann_whitney", "kruskal_wallis", "auto_compare", "insights", "period_revenue", "branch_revenue"]
     columns: list[str] | None = Field(default=None, min_length=1, max_length=10)
     column: str | None = None
     value_column: str | None = None
     group_column: str | None = None
-    group_values: list[str | int | float | bool] | None = Field(default=None,min_length=2,max_length=50)
+    group_values: list[str | int | float | bool] | None = Field(default=None,min_length=1,max_length=50)
     column_before: str | None = None
     column_after: str | None = None
     column1: str | None = None
@@ -115,7 +118,13 @@ class StatisticsConfig(StrictModel):
     independent: bool | None = None
     date_column: str | None = None
     months: list[str] | None = Field(default=None, min_length=1, max_length=12)
+    explain_change: bool | None = Field(default=None, strict=True)
+    category_column: str | None = None
+    explain_branch: bool | None = Field(default=None, strict=True)
+    focus_branch: str | None = Field(default=None, min_length=1, max_length=500)
+    status_column: str | None = None
     exclude_outliers: bool | None = None
+    excluded_integer: int | None = Field(default=None,ge=-999_999_999_999_999,le=999_999_999_999_999,strict=True)
 
 class DashboardDateFilter(StrictModel):
     column: str
@@ -255,6 +264,10 @@ Chỉ chọn dạng có đủ cột phù hợp; thiếu tọa độ hay cột s�
 Các nhánh bổ sung:
 - explore: câu hỏi số dòng/cột, cấu trúc, kiểu dữ liệu, NULL/thiếu, tỷ lệ thiếu, distinct từng cột, dòng trùng, chất lượng dataset. Trả {"decision":{"intent":"explore"}}; backend chạy profiling thật.
 - statistical: thống kê median/mode/std/variance/quartile/phân phối, tương quan, ngoại lệ, kiểm định. Trả statistics_config (CHỈ cấu hình, KHÔNG statistic/p_value/kết quả).
+  Chọn theo ý của câu hỏi, kể cả khi người dùng dùng từ đồng nghĩa, viết không dấu hoặc tách câu bằng dấu hỏi.
+  period_revenue dùng cho so sánh tổng doanh thu của hai tháng cụ thể. Chọn value_column, date_column và months theo thứ tự [tháng cần xem, tháng làm gốc], dùng YYYY-MM. Nếu nêu một chi nhánh, giữ đúng group_column và group_values chứa chi nhánh đó. Giải thích chênh lệch thì dùng explain_change=true và category_column nếu metadata có cột danh mục phù hợp. Tính đúng hai tháng được nêu, không đổi thành khoảng từ tháng đầu đến tháng cuối.
+  branch_revenue dùng khi hỏi chi nhánh nào có tổng doanh thu thấp nhất trong toàn bộ dataset. Chọn value_column và group_column. Khi hỏi vì sao chi nhánh cụ thể thấp, dùng thêm explain_branch=true và focus_branch đúng tên đó. Câu hỏi nối tiếp ngay sau một lần xếp hạng dùng branch_focus nếu có, giữ điều kiện excluded_integer từ kết quả trước nếu người dùng chưa đổi.
+  Hai phép trên chỉ dùng khi biểu diễn được toàn bộ phạm vi người dùng yêu cầu. Nếu có bộ lọc khác chưa hỗ trợ, chọn cấu hình query giữ đủ điều kiện khi thích hợp hoặc hỏi đúng điều kiện cần làm rõ.
   descriptive: columns tên cột số; correlation: columns ít nhất 2 cột số, method pearson/spearman.
   "Phân tích phân phối", "histogram" hoặc "biểu đồ phân phối" của một cột -> descriptive (engine vẽ histogram). Chỉ dùng shapiro_wilk nếu yêu cầu kiểm định phân phối chuẩn / normality / Shapiro một cách rõ ràng.
   outlier: column số, method iqr/zscore, threshold nếu yêu cầu.
@@ -276,16 +289,20 @@ Các nhánh bổ sung:
 Các nhánh BI hiện có:
 1. query: query_config dùng đúng hợp đồng:
    groupBy: [{column, timeGrain?: day/month/year, alias?: tên_ASCII}],
-   metrics: [{column, aggregate: sum/avg/min/max/count/count_distinct, alias: tên_ASCII}],
+   metrics: [{column, aggregate: sum/avg/min/max/count/count_distinct/count_blank/count_invalid, alias: tên_ASCII}],
    filters: [{column, operator: eq/ne/gt/gte/lt/lte/in/is_null/is_not_null, value?: giá_trị}],
    orderBy: [{column: alias_đầu_ra, direction: asc/desc}], limit: 1..500.
    aggregate phải phù hợp aggregates của cột. COUNT(*) đếm dòng; SUM/AVG chỉ cột number.
+   Đếm ô trống trong một cột dùng count_blank trên cột đó, không thêm bộ lọc is_null cho chính cột đếm.
+   Đếm ô sai kiểu khi nhập CSV gốc dùng count_invalid. Nếu chỉ cần số dòng theo điều kiện khác, dùng count với column="*".
+   Chỉ thêm chỉ số chất lượng dữ liệu khi câu hỏi yêu cầu đếm ô trống hoặc sai kiểu. Đếm dòng có giá trị hợp lệ dùng count trên cột chỉ số.
+   Giá trị người dùng ghi dạng nhóm nghìn tiếng Việt như 999.999 hoặc 1.000.000 phải chuyển thành số JSON 999999 hoặc 1000000 khi rõ là số nguyên. Nếu dấu phân cách mơ hồ, hỏi lại.
    Các bộ lọc kết hợp AND. Không tự thêm giới hạn thời gian hoặc điều kiện người dùng chưa yêu cầu.
    Top 5 sản phẩm đắt nhất: groupBy tên sản phẩm, AVG giá, orderBy alias giá desc, limit 5.
    Nếu cần dữ liệu thô từng dòng hoặc công thức không có trong hợp đồng, dùng clarify;
    không thay yêu cầu đó bằng một phép tính khác mà không giải thích.
    Với câu nối tiếp, dùng query_config gần nhất trong lịch sử để giữ ngữ cảnh/bộ lọc.
-   Dùng result_context và câu trả lời trước để giải nghĩa 'tháng đó', 'so lại', 'còn nhóm B', nhưng chạy lại phép tính trên dataset. Không dùng một câu hỏi cũ để đổi ý định của câu mới. Nếu lượt trước hỏi làm rõ, kết hợp câu trả lời của người dùng với câu hỏi đang dang dở.
+   Dùng query_config hoặc statistics_config gần nhất cùng result_context để giải nghĩa 'tháng đó', 'so lại', 'còn nhóm B', rồi chạy lại phép tính trên dataset. Khi hỏi tiếp, giữ chỉ số và mọi điều kiện ngoài phần người dùng muốn đổi. Câu hỏi độc lập chỉ dùng phạm vi người dùng mới nêu. Nếu kỳ, cột hoặc định nghĩa chỉ số còn mơ hồ, hỏi lại ngắn thay vì tự chọn. Nếu lượt trước hỏi làm rõ, kết hợp câu trả lời với câu hỏi đang dang dở.
 2. create_dashboard: ưu tiên template nếu có đủ cột đúng nghĩa, không đánh đồng giá với doanh thu:
    CHỈ tạo khi dashboard_creation_allowed không phải false và lượt mới chủ động yêu cầu tạo/lưu dashboard. Hỏi xem số liệu, vẽ biểu đồ, nhận xét dashboard hoặc hỏi cách tạo không phải yêu cầu tạo. Một biểu đồ trả qua query/statistical là kết quả phân tích, không lưu dashboard.
    sales-overview: mapping date (date), revenue (number), region (text), category (text).
@@ -448,8 +465,15 @@ def analyze(request: AnalyzeRequest):
     Endpoint legacy từ version 1.0 - vẫn hoạt động bình thường.
     """
     try:
-        plan = generate_plan(request)
+        business = business_plan(request.question, request.columns, request.conversation_history) if not request.dashboard_context else None
+        plan = business if business is not None else generate_plan(request)
         plan = AIPlan.model_validate(plan)
+        if plan.query_config:
+            # Counting a column constrained to NULL never counts the matching rows.
+            null_columns = {f.column for f in plan.query_config.filters if f.operator == 'is_null'}
+            for metric in plan.query_config.metrics:
+                if metric.aggregate == 'count' and metric.column in null_columns:
+                    metric.column = '*'
         return AnalyzeResponse(request_id=request.request_id, **plan.model_dump(exclude_none=True))
     except HTTPException:
         raise

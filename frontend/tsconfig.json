@@ -9,7 +9,10 @@
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["vite/client"]
+    "paths": {
+      "@openuidev/intelligent-ui-library/dist/*": ["./node_modules/@openuidev/intelligent-ui-library/dist/*"]
+    },
+    "types": ["vite/client", "node"]
   },
   "include": ["src", "vite.config.ts"]
 }

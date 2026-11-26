@@ -25,6 +25,15 @@ public class Datasets {
     if(bits.length!=2) throw Api.bad("Bảng nguồn không hợp lệ");
     return Queries.identifier(bits[0])+"."+Queries.identifier(bits[1]);
   }
+  Optional<Map<String,Object>> csvQuality(UUID datasetId){
+    return db.queryForList("""
+        SELECT f.table_name, f.columns_json,
+               to_regclass('uploads.' || f.table_name || '_invalid_cells') IS NOT NULL AS tracked
+        FROM file_imports f JOIN datasets original ON original.id=f.dataset_id
+        JOIN datasets d ON d.connection_id=original.connection_id AND d.source_name='uploads.' || f.table_name
+        WHERE d.id=? AND d.kind='PHYSICAL'
+        """,datasetId).stream().findFirst();
+  }
   public List<Map<String,Object>> list(){
     return db.queryForList("""
         SELECT d.id,d.connection_id,d.name,d.kind,d.source_name,d.sql_definition,d.aliases_json,d.owner_id,d.created_at,

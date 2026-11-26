@@ -39,6 +39,19 @@ class DatasetAnalysisTests {
     assertEquals(List.of("North","South"),query.parameters());
     assertFalse(query.sql().contains("North"));
   }
+  @Test void csvBlankAndInvalidCountsKeepAllGroupsAndBindMetadataBeforeFilters() throws Exception {
+    var query=DatasetAnalysis.compile(metadata,request("""
+        {"groupBy":[{"column":"region"}],"metrics":[
+          {"column":"amount","aggregate":"count_blank","alias":"blanks"},
+          {"column":"amount","aggregate":"count_invalid","alias":"invalids"}],
+         "filters":[{"column":"region","operator":"eq","value":"North"}]}
+        """),"\"uploads\".\"sales\"","\"uploads\".\"sales_invalid_cells\"");
+    assertTrue(query.sql().contains("COUNT(*) FILTER (WHERE \"amount\" IS NULL AND NOT EXISTS"));
+    assertTrue(query.sql().contains("COUNT(*) FILTER (WHERE EXISTS"));
+    assertTrue(query.sql().contains("bad.row_id = analyzed_source.row_id"));
+    assertTrue(query.sql().contains("WHERE \"region\" = ? GROUP BY"));
+    assertEquals(List.of("amount","amount","North"),query.parameters());
+  }
   @ParameterizedTest @ValueSource(strings={
       "{}",
       "{\"metrics\":[{\"column\":\"password_cipher\",\"aggregate\":\"count\",\"alias\":\"x\"}]}",

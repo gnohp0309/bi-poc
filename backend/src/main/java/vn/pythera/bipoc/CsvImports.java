@@ -146,6 +146,7 @@ public class CsvImports {
   }
 
   private static String tableSql(String table){return "uploads."+Queries.identifier(table);}
+  static String invalidCellsTable(String table){return tableSql(table+"_invalid_cells");}
   private static String quoted(String value){return Queries.identifier(value);}
   private void createTable(String table,List<Column> columns){
     StringBuilder sql=new StringBuilder("CREATE TABLE ").append(tableSql(table))
@@ -168,6 +169,8 @@ public class CsvImports {
     for(int i=0;i<columns.size();i++) types[i+1]=switch(columns.get(i).kind){
       case TEXT -> Types.VARCHAR;case NUMERIC -> Types.NUMERIC;case DATE -> Types.DATE;
     };
+    String invalidSql="INSERT INTO "+invalidCellsTable(table)+" (row_id,column_name) VALUES (?,?)";
+    List<Object[]> invalidCells=new ArrayList<>(BATCH_SIZE);
     List<Object[]> batch=new ArrayList<>(BATCH_SIZE);long count=0;
     try(CSVParser csv=parser(file)){
       if(csv.getHeaderNames().size()!=columns.size()) throw Api.bad("Tiêu đề CSV đã thay đổi khi đọc file");
@@ -185,6 +188,9 @@ public class CsvImports {
           };
           if(value==null){
             column.invalid++;
+            // The new table's identity starts at one and only this import writes to it.
+            invalidCells.add(new Object[]{count,column.name});
+            if(invalidCells.size()>=BATCH_SIZE){db.batchUpdate(invalidSql,invalidCells);invalidCells.clear();}
             if(column.invalidExamples.size()<3) column.invalidExamples.add("dòng "+record.getRecordNumber()+": "+raw.substring(0,Math.min(raw.length(),60)));
           } else if(value instanceof BigDecimal n){
             column.numericCount++;column.sum=column.sum.add(n);
@@ -197,6 +203,7 @@ public class CsvImports {
         if(batch.size()>=BATCH_SIZE){db.batchUpdate(sql,batch,types);batch.clear();}
       }
       if(!batch.isEmpty()) db.batchUpdate(sql,batch,types);
+      if(!invalidCells.isEmpty()) db.batchUpdate(invalidSql,invalidCells);
     }
     if(count==0) throw Api.bad("CSV chưa có dòng dữ liệu");
     return count;
@@ -266,6 +273,9 @@ public class CsvImports {
     UUID[] monthDatasetId=new UUID[1];List<UUID> chartIds=new ArrayList<>();
     try{
       createTable(table,columns);tableCreated=true;
+      String invalid=invalidCellsTable(table);
+      db.execute("CREATE TABLE "+invalid+" (row_id BIGINT NOT NULL,column_name TEXT NOT NULL,PRIMARY KEY(column_name,row_id))");
+      db.execute("GRANT SELECT ON "+invalid+" TO bi_reader");
       long rows=insertRows(file,table,columns);
       UUID connectionId=uploadConnection(actor);
       datasetId=datasets.save(Map.of("connectionId",connectionId.toString(),"kind","PHYSICAL",
@@ -277,12 +287,12 @@ public class CsvImports {
       dashboardId=dashboards.save(Map.of("name",title+" · Dashboard"),actor);
       dashboards.layout(dashboardId,Map.of("chartIds",chartIds.stream().map(UUID::toString).toList()),actor);
       long missing=columns.stream().mapToLong(c->c.missing).sum();
-      long invalid=columns.stream().mapToLong(c->c.invalid).sum();
+      long invalidCount=columns.stream().mapToLong(c->c.invalid).sum();
       List<Map<String,Object>> descriptions=columns.stream().map(Column::describe).toList();
-      Map<String,Object> analysis=Map.of("rowCount",rows,"missingCells",missing,"invalidCells",invalid,
+      Map<String,Object> analysis=Map.of("rowCount",rows,"missingCells",missing,"invalidCells",invalidCount,
           "chartCount",chartIds.size(),"cleaningRule","Trim khoảng trắng; ô trống/sai kiểu thành NULL, không bỏ dòng");
       db.update("INSERT INTO file_imports(id,file_name,table_name,row_count,missing_count,invalid_count,columns_json,analysis_json,dataset_id,month_dataset_id,dashboard_id,owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-          importId,name,table,rows,missing,invalid,mapper.writeValueAsString(descriptions),mapper.writeValueAsString(analysis),datasetId,monthDatasetId[0],dashboardId,actor.id());
+          importId,name,table,rows,missing,invalidCount,mapper.writeValueAsString(descriptions),mapper.writeValueAsString(analysis),datasetId,monthDatasetId[0],dashboardId,actor.id());
       auth.audit(actor,"IMPORT","FILE",importId);
       return detail(importId);
     }catch(Exception e){
@@ -290,7 +300,10 @@ public class CsvImports {
       for(UUID chartId:chartIds) db.update("DELETE FROM charts WHERE id=?",chartId);
       if(monthDatasetId[0]!=null) db.update("DELETE FROM datasets WHERE id=?",monthDatasetId[0]);
       if(datasetId!=null) db.update("DELETE FROM datasets WHERE id=?",datasetId);
-      if(tableCreated) db.execute("DROP TABLE IF EXISTS "+tableSql(table));
+      if(tableCreated) {
+        db.execute("DROP TABLE IF EXISTS "+invalidCellsTable(table));
+        db.execute("DROP TABLE IF EXISTS "+tableSql(table));
+      }
       if(e instanceof Api.Failure failure) throw failure;
       if(e instanceof IOException) throw Api.bad("CSV không hợp lệ hoặc không phải UTF-8: "+e.getMessage());
       throw Api.bad("Không nhập được CSV: "+e.getMessage());
@@ -319,7 +332,9 @@ public class CsvImports {
     db.update("DELETE FROM dashboards WHERE id=?",item.get("dashboard_id"));
     if(item.get("month_dataset_id")!=null) db.update("DELETE FROM datasets WHERE id=?",item.get("month_dataset_id"));
     db.update("DELETE FROM datasets WHERE id=?",item.get("dataset_id"));
-    db.execute("DROP TABLE "+tableSql(item.get("table_name").toString()));
+    String table=item.get("table_name").toString();
+    db.execute("DROP TABLE IF EXISTS "+invalidCellsTable(table));
+    db.execute("DROP TABLE "+tableSql(table));
     auth.audit(actor,"DELETE","FILE",id);
   }
 

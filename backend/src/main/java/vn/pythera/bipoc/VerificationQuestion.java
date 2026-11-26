@@ -12,16 +12,24 @@ import java.util.regex.Pattern;
 
 /** Recognizes explicit scalar questions independently of the AI plan. */
 final class VerificationQuestion {
-  private static final String BRANCH = "(?:chi nhanh|branch) ([A-Za-z0-9]+)";
-  private static final String MONTH = "(?:thang|month) (\\d{1,2})(?: nam|/|-) ?(\\d{4})";
+  private static final String BRANCH_PREFIX = "(?:chi nhanh|branch) ";
+  private static final String MONTH_PREFIX = "(?:thang|month) ";
+  private static final String MONTH_SEPARATOR = "(?: nam |/|-)";
+  private static final String STATUS_PREFIX = "(?:trang thai|status)(?: =)? ";
+  static final String BRANCH = BRANCH_PREFIX + "([A-Za-z0-9]+)";
+  static final String MONTH = MONTH_PREFIX + "(\\d{1,2})" + MONTH_SEPARATOR + "(\\d{4})";
   private static final String SEPARATOR = "(?:(?: cua| trong| tai| vao| o| va| theo)*) ";
-  private static final String SCOPE = "(" + BRANCH + "|" + MONTH + ")";
+  private static final String SCOPE = "(" + BRANCH_PREFIX + "[A-Za-z0-9]+"
+      + "|" + MONTH_PREFIX + "\\d{1,2}" + MONTH_SEPARATOR + "\\d{4}"
+      + "|" + STATUS_PREFIX + "[A-Za-z0-9_-]+)";
   private static final String SUFFIX = "(?: (?:la bao nhieu|bao nhieu))?";
+  private static final String ALL = "( (?:cua |tren |xet )?(?:toan bo (?:du lieu|dataset|file)|khong ap dung bo loc))?";
   private static final Pattern METRIC = pattern("(?:hay |tinh |hay tinh |cho (?:toi|tui) biet )*"
       + "(tong(?: so)?|sum|trung binh|binh quan|average|avg|dem|count|so luong|so) (.+?)"
-      + "(?:" + SEPARATOR + SCOPE + "(?:" + SEPARATOR + SCOPE + ")?)?" + SUFFIX);
+      + "(?:" + SEPARATOR + SCOPE + ")?(?:" + SEPARATOR + SCOPE + ")?(?:" + SEPARATOR + SCOPE + ")?" + ALL + SUFFIX);
   private static final Pattern BRANCH_ONLY = pattern(BRANCH);
-  private static final Pattern MONTH_ONLY = pattern(MONTH);
+  static final Pattern MONTH_ONLY = pattern(MONTH);
+  private static final Pattern STATUS_ONLY = pattern(STATUS_PREFIX + "([A-Za-z0-9_-]+)");
   private static final Pattern KPI = pattern("(?:hay )?(?:them|gan|bo sung|tao them) (?:the )?kpi (.+?)"
       + "(?: (?:vao|cho|tren) (?:dashboard|bang dieu khien|bang tong quan)(?: vua tao| nay)?)?"
       + "(?: va loc(?: theo)? (" + BRANCH + "))?");
@@ -50,19 +58,21 @@ final class VerificationQuestion {
     String label = match.group(2).strip();
     if (label.matches("(?i)(?:don hang|orders)")) return Optional.empty();
     boolean rows = label.matches("(?i)(?:so )?(?:dong|ban ghi|rows|records)");
-    if (rows && aggregate.equals("avg")) return Optional.empty();
+    if (rows && aggregate.equals("avg") || !rows && Set.of("so luong", "so").contains(match.group(1).toLowerCase(Locale.ROOT)))
+      return Optional.empty();
     if (rows) aggregate = "count";
     String column = rows ? "*"
         : findColumn(label, aggregate).map(DatasetAnalysis.Column::name).orElse(null);
     if (column == null) return Optional.empty();
     Metric metric = new Metric(aggregate, column);
-    return filters(match.group(3), match.group(7)).map(scope -> new Expected(metric, scope));
+    if (match.group(3) != null && match.group(6) != null) return Optional.empty();
+    return filters(match.group(3), match.group(4), match.group(5)).map(scope -> new Expected(metric, scope));
   }
 
   Optional<Expected> dashboard(String question) {
     var match = DASHBOARD.matcher(fold(question));
     if (!match.matches()) return Optional.empty();
-    return filters(match.group(1), match.group(5)).map(scope -> new Expected(null, scope));
+    return filters(match.group(1), match.group(2)).map(scope -> new Expected(null, scope));
   }
 
   Optional<Kpi> dashboardUpdate(String question) {
@@ -78,27 +88,32 @@ final class VerificationQuestion {
         : Optional.empty();
   }
 
-  private Optional<List<DatasetAnalysis.Filter>> filters(String first, String second) {
+  private Optional<List<DatasetAnalysis.Filter>> filters(String... conditions) {
     var filters = new ArrayList<DatasetAnalysis.Filter>();
-    for (String condition : Arrays.asList(first, second)) {
+    for (String condition : conditions) {
       if (condition == null) continue;
       var branch = BRANCH_ONLY.matcher(condition);
       if (branch.matches()) {
-        var column = findColumn("chi nhanh", null).filter(c -> c.kind().equals("text"));
+        var column = branchColumn();
         if (column.isEmpty() || filters.stream().anyMatch(f -> f.column().equals(column.get().name()))) return Optional.empty();
         filters.add(filter(column.get().name(), "eq", branch.group(1)));
         continue;
       }
+      var status = STATUS_ONLY.matcher(condition);
+      if (status.matches()) {
+        var column = findColumn("trang thai", null).filter(c -> c.kind().equals("text"));
+        if (column.isEmpty() || filters.stream().anyMatch(f -> f.column().equals(column.get().name()))) return Optional.empty();
+        filters.add(filter(column.get().name(), "eq", status.group(1)));
+        continue;
+      }
       var month = MONTH_ONLY.matcher(condition);
-      var dateColumns = metadata.columns().stream().filter(c -> c.kind().equals("date")).toList();
-      if (!month.matches() || dateColumns.size() != 1 || filters.stream().anyMatch(f -> !f.operator().equals("eq")))
+      var date = dateColumn();
+      if (!month.matches() || date.isEmpty() || filters.stream().anyMatch(f -> f.column().equals(date.get().name())))
         return Optional.empty();
-      var column = dateColumns.get(0);
       try {
         YearMonth period = YearMonth.of(Integer.parseInt(month.group(2)), Integer.parseInt(month.group(1)));
         if (period.getYear() < 1 || period.getYear() > 9998) return Optional.empty();
-        filters.add(dateFilter(column, "gte", period.atDay(1)));
-        filters.add(dateFilter(column, "lt", period.plusMonths(1).atDay(1)));
+        filters.addAll(monthFilters(date.get(), period));
       } catch (java.time.DateTimeException e) {
         return Optional.empty();
       }
@@ -106,20 +121,37 @@ final class VerificationQuestion {
     return Optional.of(List.copyOf(filters));
   }
 
+  Optional<DatasetAnalysis.Column> branchColumn() {
+    return findColumn("chi nhanh", null).filter(c -> c.kind().equals("text"));
+  }
+
+  Optional<DatasetAnalysis.Column> dateColumn() {
+    var columns = metadata.columns().stream().filter(c -> c.kind().equals("date")).toList();
+    return columns.size() == 1 ? Optional.of(columns.get(0)) : Optional.empty();
+  }
+
+  static List<DatasetAnalysis.Filter> monthFilters(DatasetAnalysis.Column column, YearMonth month) {
+    return List.of(dateFilter(column, "gte", month.atDay(1)),
+        dateFilter(column, "lt", month.plusMonths(1).atDay(1)));
+  }
+
   private Optional<DatasetAnalysis.Column> findColumn(String label, String aggregate) {
     String normalized = columnWords(label);
     var candidates = metadata.columns().stream()
         .filter(c -> aggregate == null || c.aggregates().contains(aggregate))
-        .filter(c -> equivalentColumn(columnWords(c.name().replaceFirst("^c_", "")), normalized)
+        .filter(c -> equivalentColumn(columnWords(c.name()), normalized)
             || equivalentColumn(columnWords(c.label()), normalized))
         .toList();
-    return candidates.size() == 1 ? Optional.of(candidates.get(0)) : Optional.empty();
+    if (candidates.size() == 1) return Optional.of(candidates.get(0));
+    var named = candidates.stream().filter(c -> columnWords(c.label()).equals(normalized)).toList();
+    return named.size() == 1 ? Optional.of(named.get(0)) : Optional.empty();
   }
 
   private static boolean equivalentColumn(String column, String label) {
     return column.equals(label) || Set.of("doanh thu", "revenue").containsAll(List.of(column, label))
         || Set.of("chi nhanh", "branch").containsAll(List.of(column, label))
-        || Set.of("chi phi", "cost").containsAll(List.of(column, label));
+        || Set.of("chi phi", "cost").containsAll(List.of(column, label))
+        || Set.of("trang thai", "status").containsAll(List.of(column, label));
   }
 
   static DatasetAnalysis.Filter dateFilter(DatasetAnalysis.Column column, String operator, LocalDate date) {
@@ -157,7 +189,7 @@ final class VerificationQuestion {
     return fold(text).toLowerCase(Locale.ROOT).replaceFirst("^c_", "").replace('_', ' ');
   }
 
-  private static String fold(String text) {
+  static String fold(String text) {
     return Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("\\p{M}+", "")
         .replace('đ', 'd').replace('Đ', 'D').replaceAll("\\s+", " ").strip().replaceAll("[?.!]+$", "").strip();
   }

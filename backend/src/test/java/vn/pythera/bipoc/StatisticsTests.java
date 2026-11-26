@@ -10,7 +10,9 @@ class StatisticsTests {
   private final DatasetAnalysis.Metadata metadata=new DatasetAnalysis.Metadata(UUID.randomUUID(),"Test","PHYSICAL",List.of(
       new DatasetAnalysis.Column("amount","Amount","numeric","number",true,List.of(),List.of(),1),
       new DatasetAnalysis.Column("before","Before","numeric","number",true,List.of(),List.of(),1),
-      new DatasetAnalysis.Column("group","Group","text","text",true,List.of(),List.of(),1)),Map.of());
+      new DatasetAnalysis.Column("group","Group","text","text",true,List.of(),List.of(),1),
+      new DatasetAnalysis.Column("category","Category","text","text",true,List.of(),List.of(),1),
+      new DatasetAnalysis.Column("date","Date","date","date",true,List.of(),List.of(),1)),Map.of());
   private Statistics.Plan validate(String json)throws Exception{return Statistics.validate(mapper.readTree(json),metadata);}
   @Test void acceptsKnownNumericColumnsAndExplicitGroups()throws Exception {
     var plan=validate("{\"operation\":\"independent_ttest\",\"value_column\":\"amount\",\"group_column\":\"group\",\"group_values\":[\"A\",\"B\"],\"equal_variance\":false}");
@@ -42,5 +44,28 @@ class StatisticsTests {
   }
   @Test void insightsCannotTreatNumericOrUnknownColumnAsDate() {
     for(String name:List.of("amount","secret"))assertThrows(Api.Failure.class,()->validate("{\"operation\":\"insights\",\"columns\":[\"amount\"],\"date_column\":\""+name+"\"}"));
+  }
+  @Test void revenueChangeValidatesCategoryAndPreservesPeriodOrder() throws Exception {
+    String request="""
+        {"operation":"period_revenue","value_column":"amount","date_column":"date","months":["2025-06","2025-03"],
+          "explain_change":true,"category_column":"category"}
+        """;
+    var plan=validate(request);
+    assertEquals(List.of("amount","date","category"),plan.columns());
+    assertEquals(List.of("2025-06","2025-03"),plan.parameters().get("months"));
+    assertThrows(Api.Failure.class,()->validate(request.replace("\"category_column\":\"category\"","\"category_column\":\"amount\"")));
+    assertThrows(Api.Failure.class,()->validate(request.replace("\"explain_change\":true","\"explain_change\":false")));
+    assertThrows(Api.Failure.class,()->validate(request.replace("\"explain_change\":true","\"invalid_value_flag\":\"amount\"")));
+  }
+  @Test void branchExplanationKeepsFocusAsAValueAndRequiresValidCoverageColumns() throws Exception {
+    String request="""
+        {"operation":"branch_revenue","value_column":"amount","group_column":"group","explain_branch":true,
+          "focus_branch":"B","date_column":"date","status_column":"category"}
+        """;
+    var plan=validate(request);
+    assertEquals(List.of("amount","group","date","category"),plan.columns());
+    assertEquals("B",plan.parameters().get("focus_branch"));
+    assertThrows(Api.Failure.class,()->validate(request.replace("\"focus_branch\":\"B\"","\"focus_branch\":\" \"")));
+    assertThrows(Api.Failure.class,()->validate(request.replace("\"status_column\":\"category\"","\"status_column\":\"amount\"")));
   }
 }

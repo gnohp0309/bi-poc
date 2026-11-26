@@ -4,6 +4,7 @@ import math
 import os
 import warnings
 from typing import Any, Literal
+from decimal import Decimal
 import numpy as np
 import pandas as pd
 import scipy
@@ -16,7 +17,7 @@ from app.utils.data_loader import DataLoader
 
 router = APIRouter(tags=['Internal dataset execution'])
 OPERATIONS = Literal['descriptive','correlation','outlier','shapiro_wilk','independent_ttest',
-    'paired_ttest','anova','chi_square','mann_whitney','kruskal_wallis','auto_compare','insights']
+    'paired_ttest','anova','chi_square','mann_whitney','kruskal_wallis','auto_compare','insights','period_revenue','branch_revenue']
 
 class ExecutionRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -29,6 +30,7 @@ class ExecutionRequest(BaseModel):
 def finite(value):
     if isinstance(value,dict):return {str(k):finite(v) for k,v in value.items()}
     if isinstance(value,(tuple,list)):return [finite(v) for v in value]
+    if isinstance(value,Decimal):return int(value) if value == value.to_integral_value() else finite(float(value))
     if isinstance(value,(float,np.floating)):return float(value) if math.isfinite(value) else None
     if isinstance(value,np.integer):return int(value)
     if isinstance(value,np.bool_):return bool(value)
@@ -52,11 +54,31 @@ def execute(request: ExecutionRequest):
         'datasetId':request.dataset_id,'warnings':[],'charts':[],
         'provenance':{'engine':'SciPy / pandas','version':scipy.__version__,'sampled':False,'scope':'dataset-definition',
         'missingPolicy':'Bỏ NULL và số không hữu hạn; phân tích nhiều biến dùng dòng đầy đủ cho các biến được chọn'}}
-    categorical={p.get('group_column'),p.get('column1'),p.get('column2')}
+    raw_revenue = exclusion_matches = None
+    if op == 'branch_revenue':
+        from app.engine.business_revenue import exact_integer_matches
+        # Match the original decimal token before pandas converts values to floating point.
+        index = request.columns.index(p['value_column'])
+        raw_revenue = pd.Series([row[index] for row in request.data], dtype=object)
+        if 'excluded_integer' in p:
+            exclusion_matches = exact_integer_matches(raw_revenue, p['excluded_integer'])
+    categorical={p.get('group_column'),p.get('column1'),p.get('column2'),p.get('category_column'),p.get('status_column')}
+    preserve={p.get('date_column')}
+    if op == 'period_revenue' and p.get('explain_change'):
+        metric=p['value_column']
+        index=request.columns.index(metric)
+        frame[metric]=pd.Series([row[index] for row in request.data],dtype=object)
+        preserve.update((metric,p.get('invalid_value_flag')))
     for name in frame.columns:
-        if name == p.get('date_column'):continue
+        if name in preserve:continue
         if name not in categorical:frame[name]=pd.to_numeric(frame[name],errors='coerce').replace([np.inf,-np.inf],np.nan)
         else:frame[name]=frame[name].map(lambda v:None if isinstance(v,str) and not v.strip() else v)
+    if op in ('period_revenue', 'branch_revenue'):
+        from app.engine.business_revenue import compare_revenue
+        report = compare_revenue(frame, p, result, op, table, chart, exclusion_matches, raw_revenue)
+        report['provenance']['missingPolicy'] = ('Bỏ doanh thu thiếu hoặc sai kiểu và giữ dòng trùng. '
+            + ('Chỉ loại giá trị đã được yêu cầu.' if 'excluded_integer' in p else 'Giữ giá trị ngoại lệ.'))
+        return finite(report)
     if p.get('group_values'):
         frame=frame.loc[frame[p['group_column']].isin(p['group_values'])].copy()
         result['warnings'].append('Chỉ phân tích các nhóm được yêu cầu; total vẫn là số dòng dataset.')

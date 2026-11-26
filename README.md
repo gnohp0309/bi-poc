@@ -6,6 +6,7 @@
 
 - **Từ file CSV:** tải file lên, xem số dòng và các ô trống/sai kiểu, sau đó mở dashboard và biểu đồ được tạo tự động.
 - **Từ PostgreSQL:** kết nối bảng dữ liệu, tạo dataset vật lý hoặc dataset ảo bằng SQL, chạy truy vấn trong SQL Lab và tự tạo biểu đồ trong Chart Builder.
+- **Trong Chat AI:** hỏi tiếp trên cùng dataset, phân tích doanh thu theo chi nhánh hoặc theo kỳ, chuyển giữa biểu đồ và bảng số liệu OpenUI, rồi mở **Kiểm chứng** để đối chiếu chỉ số và phạm vi lọc.
 - **Trên dashboard:** thêm và sắp xếp biểu đồ, lọc dữ liệu cơ bản, tạo liên kết hoặc mã nhúng để xem trên cùng máy chạy POC.
 - **Quản lý:** tài khoản Admin/Analyst/Viewer và nhật ký thao tác cơ bản.
 
@@ -13,7 +14,7 @@ Mã nguồn sử dụng Spring Boot, React/TypeScript, ECharts và PostgreSQL. [
 
 ## Tải về và chạy thử
 
-Quy trình dưới đây dành cho **Windows**. Cần cài Git, **JDK 17**, Maven, **PostgreSQL 18** và Node.js `^20.19.0` hoặc `>=22.12.0`. Các lệnh `git`, `java`, `mvn`, `npm` cần hoạt động trong CMD/PowerShell; lần đầu cần Internet để tải thư viện. Cổng **8081** và **5433** cần còn trống.
+Quy trình dưới đây dành cho **Windows**. Cần cài Git, **JDK 17**, Maven, **PostgreSQL 18** và **Node.js 22.12 trở lên**. Kiểm tra các lệnh `git`, `java`, `mvn`, `npm` trong CMD hoặc PowerShell. Lần đầu cần Internet để tải thư viện. Cổng **8081** và **5433** cần còn trống.
 
 ```powershell
 git clone https://github.com/gnohp0309/bi-poc.git
@@ -31,6 +32,20 @@ Lần chạy đầu, script tự build frontend/backend và tạo PostgreSQL ri�
 
 Nếu PostgreSQL được cài ở đường dẫn khác và script không tìm thấy, đặt biến `POC_POSTGRES_BIN` trỏ đến thư mục `bin` của PostgreSQL trước khi chạy. Đây là **mật khẩu mẫu công khai**, chỉ dùng với dữ liệu giả lập trên máy cá nhân.
 
+### Nếu đã clone repo
+
+Chạy trong thư mục `bi-poc`. Cất hoặc commit thay đổi riêng trước khi chuyển sang `main`.
+
+```cmd
+git switch main
+git pull --ff-only origin main
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\stop-demo.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\build-demo.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev\start-demo.ps1
+```
+
+`build-demo.ps1` cập nhật JAR đang dùng. Dữ liệu đã nhập vẫn nằm trong `.local` trên từng máy. Để chạy Chat AI sau khi cập nhật, dừng dịch vụ AI bằng **Ctrl+C** ở terminal AI, rồi chạy lại `ai-service\start-ai-service.ps1` với cấu hình Gemini riêng của máy đó.
+
 ## Hai cách thử nhanh
 
 **1. Tải CSV:** vào **Tải file & phân tích**, chọn `demo/doanh_thu_poc.csv`, rồi bấm **Nhập file và tạo dashboard**. Kết quả mẫu có **12 dòng, 2 ô trống, 2 ô sai kiểu**. Bấm **Mở dashboard** để xem biểu đồ; thử lọc `c_khu_vuc` theo `Miền Bắc`.
@@ -45,7 +60,7 @@ Script nạp `public.orders` và `public.products` vào database `bi_poc_source`
 
 ## Khám phá dữ liệu và thống kê
 
-Vào **Chat AI**, chọn dataset rồi mở **Khám phá dataset trong Chat** để xem profiling, dữ liệu thiếu, trùng lặp và sai kiểu CSV. Gửi câu hỏi trong hội thoại để chạy thống kê mô tả, Pearson/Spearman, IQR/Z-score, kiểm định hoặc nhận định từ số liệu thực. Kết quả được lưu cùng hội thoại. Dashboard do Chat tạo có thể mở lại trong Chat để chỉnh sửa, lọc, xem chi tiết, chia sẻ và xuất file.
+Từ **Tổng quan**, bấm **Mở Chat AI**, chọn dataset rồi nhập câu hỏi đầu tiên để tạo hội thoại. Dùng **Khám phá dataset** để xem cấu trúc, dữ liệu thiếu, trùng lặp và sai kiểu CSV. Chat hỗ trợ thống kê mô tả, Pearson/Spearman, IQR/Z-score, kiểm định và so sánh doanh thu. Kết quả được lưu cùng hội thoại. Dashboard do Chat tạo có thể mở lại trong Chat để xem, lọc, chia sẻ và xuất file.
 
 Xem [hợp đồng tích hợp và giới hạn](docs/EXPLORATION_INTEGRATION.md). File [CSV giả lập có dữ liệu bẩn](demo/exploration_dirty_242.csv) có **242 dòng, 3 ô thiếu và 3 ô sai kiểu lúc nhập, 2 dòng trùng dư, một ngoại lệ doanh thu 999999**. Sau nhập, ô sai kiểu chuyển NULL nên báo cáo hiện tại có 6 ô thiếu. Không tự xóa dòng hoặc sửa dữ liệu gốc.
 

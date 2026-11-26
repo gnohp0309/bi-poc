@@ -108,13 +108,28 @@ public class Chat {
     Collections.reverse(history);
     List<Map<String,Object>> context=new ArrayList<>();
     String recentResult="";
+    VerificationQuestion.Expected priorScope=null;
+    boolean pendingClarification=false;
     for(var saved:history) {
       Map<String,Object> item=new LinkedHashMap<>();
       String content=saved.get("content").toString();
       item.put("role",saved.get("role"));
       item.put("content",content.substring(0,Math.min(4000,content.length())));
+      boolean assistant="assistant".equals(saved.get("role"));
+      if(assistant) {
+        priorScope=null;
+        pendingClarification=false;
+      }
       try {
         JsonNode extra=mapper.readTree(saved.get("metadata_json").toString());
+        if(assistant) {
+          String intent=extra.path("intent").asText();
+          if(!intent.isBlank()) item.put("intent",intent);
+          pendingClarification="clarify".equals(intent);
+          priorScope=readScope(mapper,extra.path(pendingClarification?"query_anchor":"expected_query_scope"));
+          if("branch_revenue".equals(extra.path("statistics_config").path("operation").asText()))
+            ChatAnalysisPresentation.branchFocus(extra.path("analysis_result")).ifPresent(branch->item.put("branch_focus",branch));
+        }
         if(extra.has("query_config")) item.put("query_config",extra.get("query_config"));
         if(extra.has("statistics_config")) item.put("statistics_config",extra.get("statistics_config"));
         if(extra.hasNonNull("result_context")) {
@@ -126,6 +141,25 @@ public class Chat {
     }
     String requestId=UUID.randomUUID().toString();
     var requested=ChatDashboardActions.requestedActions(message);
+    if(requested.isEmpty() && !requestsDashboard(message)) {
+      var parser=new VerificationQuestion(metadata);
+      var followUps=new ChatFollowUps(parser);
+      var explicit=parser.query(message);
+      if(explicit.isPresent())
+        return executeScoped(conversationId,datasetId,message,requestId,explicit.get(),followUps,actor);
+      // A bare period or branch can be the answer to an earlier, non-scalar clarification.
+      if(priorScope!=null || !pendingClarification) {
+        var relative=followUps.resolve(message,priorScope);
+        if(relative.isPresent()) {
+          var resolution=relative.get();
+          if(resolution.scope()!=null)
+            return executeScoped(conversationId,datasetId,message,requestId,resolution.scope(),followUps,actor);
+          var clarify=new AIResponse(requestId,"clarify",null,null,null,null,null,null,resolution.clarification(),null);
+          var anchor=priorScope==null?Map.<String,Object>of():Map.<String,Object>of("query_anchor",priorScope);
+          return executePlan(conversationId,datasetId,message,clarify,actor,recentResult,null,Set.of(),anchor);
+        }
+      }
+    }
     var target=requested.isEmpty()?Optional.<ChatDashboardActions.Target>empty():dashboardActions.latest(conversationId,actor);
     Map<String,Object> request=new LinkedHashMap<>(Map.of("request_id",requestId,"question",message,"dataset_name",metadata.name(),
         "columns",metadata.columns().stream().map(c->Map.of("name",c.name(),"type",c.type(),"kind",c.kind(),
@@ -156,6 +190,55 @@ public class Chat {
           "Chat chưa xác định được thao tác trên dashboard. Hãy nêu rõ KPI, điều kiện lọc hoặc định dạng xuất.",null);
     }
     return executePlan(conversationId,datasetId,message,plan,actor,recentResult,target.orElse(null),requested);
+  }
+
+  static VerificationQuestion.Expected readScope(ObjectMapper mapper,JsonNode stored) throws java.io.IOException {
+    return stored.isObject()?mapper.treeToValue(stored,VerificationQuestion.Expected.class):null;
+  }
+
+  private Map<String,Object> executeScoped(UUID conversationId,UUID datasetId,String message,String requestId,
+      VerificationQuestion.Expected scope,ChatFollowUps followUps,Auth.Actor actor) {
+    var metric=scope.metric();
+    var query=new DatasetAnalysis.Request(List.of(),List.of(new DatasetAnalysis.Metric(metric.column(),metric.aggregate(),"answer")),
+        scope.filters(),List.of(),1);
+    var plan=new AIResponse(requestId,"query",mapper.valueToTree(query),null,null,null,null,null,null,null);
+    return executePlan(conversationId,datasetId,message,plan,actor,"",null,Set.of(),
+        Map.of("expected_query_scope",scope,"analysis_suggestions",followUps.suggestions(scope)));
+  }
+
+  @Transactional
+  public Map<String,Object> runSuggestion(UUID conversationId,UUID messageId,String suggestion,Auth.Actor actor) {
+    auth.canEdit(actor);
+    UUID datasetId=(UUID)ownedConversation(conversationId,actor).get("dataset_id");
+    var saved=db.queryForList("""
+        SELECT metadata_json FROM chat_messages WHERE conversation_id=? AND id=? AND role='assistant'
+        """,String.class,conversationId,messageId).stream().findFirst().orElseThrow(Api::notFound);
+    try {
+      JsonNode metadata=mapper.readTree(saved);
+      var action=metadata.path("analysis_suggestions");
+      String label=null;
+      for(JsonNode item:action) {
+        if(suggestion.equals(item.path("id").asText())) { label=item.path("label").asText(); break; }
+      }
+      if(label==null) throw Api.notFound();
+      if("exclude-outlier".equals(suggestion)) {
+        var original=metadata.path("statistics_config");
+        var candidate=metadata.path("analysis_result").path("rankChangingOutlier");
+        if(!"branch_revenue".equals(original.path("operation").asText()) || original.has("excluded_integer")
+            || !candidate.isIntegralNumber() || !candidate.canConvertToLong()) throw Api.notFound();
+        var updated=((com.fasterxml.jackson.databind.node.ObjectNode)original).deepCopy();
+        updated.put("excluded_integer",candidate.longValue());
+        var plan=new AIResponse(UUID.randomUUID().toString(),"statistical",null,null,null,null,null,null,null,null,updated);
+        return executePlan(conversationId,datasetId,label,plan,actor);
+      }
+      var scope=readScope(mapper,metadata.path("expected_query_scope"));
+      if(scope==null) throw Api.notFound();
+      var followUps=new ChatFollowUps(new VerificationQuestion(analysis.metadata(datasetId)));
+      return executeScoped(conversationId,datasetId,label,UUID.randomUUID().toString(),
+          followUps.suggestionScope(suggestion,scope),followUps,actor);
+    } catch(java.io.IOException e) {
+      throw Api.bad("Không đọc được phạm vi đã lưu để chạy gợi ý");
+    }
   }
   AIResponse callAI(Map<String,Object> body) {
     try {
@@ -191,29 +274,43 @@ public class Chat {
   }
   private Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor,
       String recentResult,ChatDashboardActions.Target target,Set<String> requested) {
+    return executePlan(conversationId,datasetId,message,plan,actor,recentResult,target,requested,Map.of());
+  }
+  private Map<String,Object> executePlan(UUID conversationId,UUID datasetId,String message,AIResponse plan,Auth.Actor actor,
+      String recentResult,ChatDashboardActions.Target target,Set<String> requested,Map<String,Object> scopeMetadata) {
     auth.canEdit(actor);
     if("create_dashboard".equals(plan.intent()) && !requestsDashboard(message)) {
       plan=new AIResponse(plan.request_id(),"clarify",null,null,null,null,null,null,
           "Bạn muốn phân tích ngay trong Chat hay tạo dashboard mới? Nếu muốn tạo, hãy nói rõ bạn muốn dashboard về nội dung nào.",null);
     }
-    Map<String,Object> extra=new LinkedHashMap<>();
+    Map<String,Object> extra=new LinkedHashMap<>(scopeMetadata);
     Map<String,Object> result=new LinkedHashMap<>();
     String answer;
+    boolean engineQueryAnswer=false;
     if("query".equals(plan.intent())) {
       if(plan.query_config()==null || !plan.query_config().isObject()) throw Api.bad("AI chưa đề xuất cấu hình phân tích hợp lệ");
       Map<String,Object> data=analysis.analyze(datasetId,plan.query_config(),actor);
-      answer=formatAnswer(data);
+      boolean quality=ChatAnalysisPresentation.isQualityQuery(plan.query_config());
+      var totals=ChatAnalysisPresentation.totalsSummary(data,plan.query_config());
+      answer=quality?ChatAnalysisPresentation.qualitySummary(data,plan.query_config()):totals.orElseGet(()->formatAnswer(data));
+      engineQueryAnswer=quality || totals.isPresent();
       extra.put("query_config",plan.query_config());
       extra.put("data",data);
       extra.put("has_data",true);
       extra.put("row_count",data.get("rowCount"));
       result.put("data",data);
       Map<String,Object> presentation=ChatAnalysisPresentation.query(datasetId,data,plan.query_config());
+      presentation.put("summary",answer);
       extra.put("analysis_result",presentation);
       result.put("analysis_result",presentation);
     } else if("statistical".equals(plan.intent())) {
       Map<String,Object> report=statistics.execute(datasetId,plan.statistics_config(),actor);
       extra.put("analysis_result",report);extra.put("statistics_config",plan.statistics_config());
+      if("branch_revenue".equals(plan.statistics_config().path("operation").asText())
+          && !plan.statistics_config().has("excluded_integer") && report.get("rankChangingOutlier") instanceof Number candidate) {
+        var label="Xem xếp hạng khi bỏ ngoại lệ "+java.text.NumberFormat.getIntegerInstance(Locale.forLanguageTag("vi-VN")).format(candidate);
+        extra.put("analysis_suggestions",List.of(new ChatFollowUps.Suggestion("exclude-outlier",label)));
+      }
       result.put("analysis_result",report);
       answer=Objects.toString(report.get("summary"),"Đã tính kết quả thống kê trên dataset.");
       if(report.containsKey("conclusion")) answer+="\n"+report.get("conclusion");
@@ -279,7 +376,10 @@ public class Chat {
       JsonNode verified=mapper.valueToTree(report);
       String insight=verified.has("insightContext") ? "Phạm vi Insights đã chạy: "+verified.get("insightContext")+"\n" : "";
       extra.put("result_context",ChatNarrative.bounded(insight+answer,1800));
-      if(narrative!=null) {
+      if(engineQueryAnswer || (plan.statistics_config()!=null
+          && Statistics.BUSINESS_METHODS.contains(plan.statistics_config().path("operation").asText()))) {
+        result.put("narrative_source","engine");
+      } else if(narrative!=null) {
         var explanation=narrative.explain(message,report,recentResult);
         result.put("narrative_source",explanation.isPresent()?"gemini":"engine");
         if(explanation.isPresent()) {
@@ -408,6 +508,11 @@ public class Chat {
       Auth.Actor actor=auth.actor(request);
       auth.canEdit(actor);
       return service.sendMessage(Api.uuid(Api.text(body,"conversationId")),Api.text(body,"message"),actor);
+    }
+    @PostMapping("/conversations/{id}/messages/{message}/suggestions/{suggestion}")
+    Map<String,Object> suggestion(@PathVariable String id,@PathVariable String message,@PathVariable String suggestion,
+        HttpServletRequest request) {
+      return service.runSuggestion(Api.uuid(id),Api.uuid(message),suggestion,auth.actor(request));
     }
     @DeleteMapping("/conversations/{id}")
     Map<String,Object> delete(@PathVariable String id,HttpServletRequest request) {

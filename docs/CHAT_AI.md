@@ -26,13 +26,14 @@ Chỉ phần chat cần FastAPI/Gemini key. SQL Lab, CSV, Chart Builder và dash
 ## Luồng demo
 
 1. Đăng nhập Admin hoặc Analyst, vào **Chat AI**.
-2. Chọn dataset, bấm **Tạo cuộc hội thoại mới**.
+2. Chọn dataset, nhập và gửi câu hỏi đầu tiên. Chat tự tạo hội thoại và lưu kết quả.
 3. Với orders mẫu, hỏi “Tổng doanh thu là bao nhiêu?”, “Doanh thu theo vùng”, rồi “Còn trung bình?”.
 4. Hỏi “Tạo dashboard tổng quan doanh thu”. Nếu có đủ ngày/doanh thu/vùng/danh mục, AI chọn sales-overview.
 5. Các biểu đồ hiện ngay dưới tin nhắn tạo dashboard. Trong cùng hội thoại, gửi “Thêm KPI tổng doanh thu vào dashboard vừa tạo và lọc chi nhánh A” (hoặc chọn một giá trị có trong dataset). Chat thêm KPI và lưu điều kiện lọc cho dashboard gần nhất của hội thoại trong một giao dịch.
 6. Gửi “Xuất dashboard vừa tạo ra Excel” (hoặc PDF, PNG), rồi tải file từ phản hồi. File lấy từ dữ liệu đang hiển thị trong phản hồi lúc tải. Khung **Mở dashboard trong Chat** dùng để xem báo cáo và drill-down. Mở lại hội thoại sẽ tải biểu đồ từ dashboard đã lưu.
 7. Với dataset sản phẩm có giá/tồn kho nhưng thiếu doanh thu, hỏi “Tạo dashboard phân tích giá và tồn kho”. AI có thể đề xuất 2–4 biểu đồ custom; không được coi giá là doanh thu để ép vào template.
-8. Câu hỏi thiếu thông tin/ngoài hợp đồng sẽ cần làm rõ. Không bảo đảm mọi cách diễn đạt đều được LLM hiểu đúng.
+8. Với [CSV 242 dòng](../demo/exploration_dirty_242.csv), thử “Tổng doanh thu chi nhánh A tháng 3/2025?” rồi bấm **Kiểm chứng**. Kết quả **6.900** từ **20 dòng**. Hỏi tiếp “Vì sao doanh thu chi nhánh A tháng 6/2025 thấp hơn tháng 3/2025?” để chuyển giữa **Biểu đồ** và **Bảng số liệu**. Mức giảm ghi nhận là **720**.
+9. Chat sẽ hỏi lại nếu thiếu thông tin cần thiết để xác định đúng chỉ số hoặc phạm vi phân tích.
 
 Viewer chỉ đọc danh sách/lịch sử hội thoại của mình; không tạo/xóa hội thoại hoặc gửi yêu cầu phân tích. Không chia sẻ hội thoại giữa các tài khoản.
 

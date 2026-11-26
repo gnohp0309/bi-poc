@@ -16,6 +16,7 @@ import java.util.*;
 public class DatasetAnalysis {
   static final int MAX_GROUPS=3, MAX_METRICS=5, MAX_FILTERS=10, MAX_LIMIT=500;
   static final List<String> AGGREGATES=List.of("sum","avg","min","max","count","count_distinct");
+  static final Set<String> QUALITY_AGGREGATES=Set.of("count_blank","count_invalid");
   static final List<String> GRAINS=List.of("day","month","year");
   static final List<String> OPERATORS=List.of("eq","ne","gt","gte","lt","lte","in","is_null","is_not_null");
   private final Datasets datasets;
@@ -90,16 +91,42 @@ public class DatasetAnalysis {
         throw Api.bad("Cột KPI cần chứa số");
       source="(SELECT * FROM "+source+" WHERE "+DashboardInteraction.finite(quoted(finiteMetric))+") verification_source";
     }
-    Plan plan=compile(metadata,request,source);
+    String invalidCells=qualitySource(id,request);
+    Plan plan=compile(metadata,request,source,invalidCells);
     Map<String,Object> result=queries.run((UUID)dataset.get("connection_id"),plan.sql(),plan.parameters().toArray());
     @SuppressWarnings("unchecked") List<Map<String,Object>> rows=(List<Map<String,Object>>)result.get("rows");
     boolean truncated=Boolean.TRUE.equals(result.get("truncated")) || rows.size()>plan.limit();
     List<Map<String,Object>> visible=List.copyOf(rows.subList(0,Math.min(rows.size(),plan.limit())));
     auth.audit(actor,"ANALYZE","DATASET",id);
     return Map.of("datasetId",id,"columns",result.get("columns"),"rows",visible,"rowCount",visible.size(),
-        "rowLimit",plan.limit(),"truncated",truncated);
+        "rowLimit",plan.limit(),"truncated",truncated,"method",describe(metadata,request,invalidCells!=null),
+        "metricLabels",metricLabels(metadata,request));
+  }
+  private String qualitySource(UUID id,Request request){
+    if(request==null || request.metrics()==null) return null;
+    var quality=request.metrics().stream().filter(m->m!=null && m.aggregate()!=null && QUALITY_AGGREGATES.contains(m.aggregate())).toList();
+    if(quality.isEmpty()) return null;
+    var imported=datasets.csvQuality(id);
+    if(imported.isPresent() && Boolean.TRUE.equals(imported.get().get("tracked")))
+      return CsvImports.invalidCellsTable(imported.get().get("table_name").toString());
+    if(imported.isPresent()) {
+      try {
+        Set<String> inputs=new HashSet<>();quality.forEach(m->inputs.add(m.column()));
+        for(JsonNode column:mapper.readTree(imported.get().get("columns_json").toString()))
+          if(inputs.contains(column.path("name").asText()) && column.path("invalid").asLong()>0)
+            throw Api.bad("Bản CSV cũ đã gộp ô trống và ô sai kiểu thành NULL. Tải lại file gốc để đếm riêng từng loại.");
+        // The old import profile confirms the selected columns have no invalid values.
+        return "";
+      } catch(JsonProcessingException e){throw Api.bad("Không đọc được thông tin chất lượng của file CSV");}
+    }
+    if(quality.stream().anyMatch(m->m.aggregate().equals("count_invalid")))
+      throw Api.bad("Cần chọn dataset CSV gốc để xem dữ liệu sai kiểu khi nhập");
+    return null;
   }
   static Plan compile(Metadata metadata,Request request,String source){
+    return compile(metadata,request,source,null);
+  }
+  static Plan compile(Metadata metadata,Request request,String source,String invalidCells){
     if(request==null) throw Api.bad("Cần cấu hình phân tích");
     List<Group> groups=request.groupBy()==null?List.of():request.groupBy();
     List<Metric> metrics=request.metrics()==null?List.of():request.metrics();
@@ -128,7 +155,25 @@ public class DatasetAnalysis {
       selections.add(expression+" AS "+quoted(alias));
     }
     for(Metric metric:metrics){
-      if(metric==null || metric.aggregate()==null || !AGGREGATES.contains(metric.aggregate())) throw Api.bad("Phép tổng hợp không được hỗ trợ");
+      if(metric==null || metric.aggregate()==null) throw Api.bad("Phép tổng hợp không được hỗ trợ");
+      String alias=alias(metric.alias());unique(outputNames,alias);
+      if(QUALITY_AGGREGATES.contains(metric.aggregate())) {
+        Column column=column(columns,metric.column());
+        String field=quoted(column.name());
+        String blank=field+" IS NULL";
+        if(column.kind().equals("text")) blank="("+blank+" OR BTRIM("+field+") = '')";
+        String invalid="FALSE";
+        if(invalidCells!=null && !invalidCells.isEmpty()) {
+          invalid="EXISTS (SELECT 1 FROM "+invalidCells+" bad WHERE bad.row_id = analyzed_source.row_id AND bad.column_name = ?)";
+          values.add(column.name());
+        } else if(invalidCells==null && metric.aggregate().equals("count_invalid")) {
+          throw Api.bad("Cần chọn dataset CSV gốc để xem dữ liệu sai kiểu khi nhập");
+        }
+        String predicate=metric.aggregate().equals("count_invalid")?invalid:blank+" AND NOT "+invalid;
+        selections.add("COUNT(*) FILTER (WHERE "+predicate+") AS "+quoted(alias));
+        continue;
+      }
+      if(!AGGREGATES.contains(metric.aggregate())) throw Api.bad("Phép tổng hợp không được hỗ trợ");
       String field;
       if("*".equals(metric.column())){
         if(!metric.aggregate().equals("count")) throw Api.bad("Chỉ COUNT được dùng cột *");
@@ -138,7 +183,6 @@ public class DatasetAnalysis {
         if(!column.aggregates().contains(metric.aggregate())) throw Api.bad("Phép tổng hợp không phù hợp kiểu cột");
         field=quoted(column.name());
       }
-      String alias=alias(metric.alias());unique(outputNames,alias);
       String aggregate=metric.aggregate().equals("count_distinct")?"COUNT(DISTINCT "+field+")":metric.aggregate().toUpperCase(Locale.ROOT)+"("+field+")";
       selections.add(aggregate+" AS "+quoted(alias));
     }
@@ -169,11 +213,93 @@ public class DatasetAnalysis {
       sorting.add(quoted(order.column())+" "+order.direction().toUpperCase(Locale.ROOT)+" NULLS LAST");
     }
     for(String name:groupAliases) if(sorted.add(name)) sorting.add(quoted(name)+" ASC NULLS LAST");
+    if(invalidCells!=null && !invalidCells.isEmpty()) source="(SELECT * FROM "+source+") analyzed_source";
     String sql="SELECT "+String.join(", ",selections)+" FROM "+source
         +(conditions.isEmpty()?"":" WHERE "+String.join(" AND ",conditions))
         +(groupExpressions.isEmpty()?"":" GROUP BY "+String.join(", ",groupExpressions))
         +(sorting.isEmpty()?"":" ORDER BY "+String.join(", ",sorting))+" LIMIT "+(limit+1);
     return new Plan(sql,List.copyOf(values),limit);
+  }
+  private static Map<String,String> columnLabels(Metadata metadata){
+    Map<String,String> labels=new HashMap<>();
+    metadata.columns().forEach(c->labels.put(c.name(),switch(c.label().toLowerCase(Locale.ROOT)) {
+      case "revenue" -> "doanh thu";
+      case "date" -> "ngày";
+      case "branch" -> "chi nhánh";
+      case "status" -> "trạng thái";
+      default -> c.label();
+    }));
+    return labels;
+  }
+  private static Map<String,String> metricLabels(Metadata metadata,Request request){
+    Map<String,String> labels=columnLabels(metadata),result=new LinkedHashMap<>();
+    for(Metric metric:request.metrics()) {
+      String label=labels.get(metric.column());
+      result.put(metric.alias(),switch(metric.aggregate()) {
+        case "count" -> label==null?"Số dòng":"Số dòng có giá trị ở cột "+label;
+        case "sum" -> "Tổng "+label;
+        case "avg" -> "Trung bình của "+label;
+        case "min" -> "Giá trị nhỏ nhất của "+label;
+        case "max" -> "Giá trị lớn nhất của "+label;
+        case "count_distinct" -> "Số giá trị khác nhau của "+label;
+        case "count_blank" -> "Số ô trống của "+label;
+        case "count_invalid" -> "Số ô sai kiểu của "+label;
+        default -> metric.alias();
+      });
+    }
+    return result;
+  }
+  private static String describe(Metadata metadata,Request request,boolean knownCsvQuality){
+    Map<String,String> labels=columnLabels(metadata);
+    var metrics=request.metrics().stream().map(m->metricLabel(m.aggregate(),labels.get(m.column()))).toList();
+    String method=String.join(", ",metrics)+".";
+    if(request.groupBy()!=null && !request.groupBy().isEmpty()) {
+      var groups=request.groupBy().stream().map(g->labels.get(g.column())+switch(Objects.toString(g.timeGrain(),"")) {
+        case "year" -> " theo năm";
+        case "month" -> " theo tháng";
+        case "day" -> " theo ngày";
+        default -> "";
+      }).toList();
+      method+=" Nhóm theo "+String.join(", ",groups)+".";
+      if(request.groupBy().stream().anyMatch(g->g.timeGrain()!=null))
+        method+=" Các nhóm thời gian chỉ dùng những dòng có ngày.";
+    }
+    if(request.filters()!=null && !request.filters().isEmpty()) {
+      var filters=request.filters().stream().map(f->labels.get(f.column())+" "+switch(f.operator()) {
+        case "is_null" -> "là NULL";
+        case "is_not_null" -> "có giá trị";
+        case "eq" -> "= "+displayValue(f.value());
+        case "ne" -> "khác "+displayValue(f.value());
+        case "lt" -> "< "+displayValue(f.value());
+        case "lte" -> "≤ "+displayValue(f.value());
+        case "gt" -> "> "+displayValue(f.value());
+        case "gte" -> "≥ "+displayValue(f.value());
+        default -> "thuộc "+displayValue(f.value());
+      }).toList();
+      method+=" Phạm vi lọc gồm "+String.join(" và ",filters)+".";
+    } else method+=" Dùng toàn bộ dataset đã chọn.";
+    if(request.metrics().stream().anyMatch(m->m.aggregate().equals("count_blank")))
+      method+=knownCsvQuality?" Ô sai kiểu đã ghi nhận được tính riêng khỏi ô trống."
+          :" Ô trống được xác định từ giá trị NULL hoặc chuỗi trống hiện tại của nguồn.";
+    if(request.metrics().stream().anyMatch(m->Set.of("sum","avg","min","max","count_distinct").contains(m.aggregate())
+        || (m.aggregate().equals("count") && !"*".equals(m.column()))))
+      method+=" Phép tính theo cột bỏ qua NULL và giữ dòng trùng trong dữ liệu nguồn.";
+    return method;
+  }
+  private static String metricLabel(String aggregate,String label){
+    return switch(aggregate){
+      case "count" -> label==null?"Đếm số dòng":"Đếm giá trị khác NULL của "+label;
+      case "count_blank" -> "Đếm ô trống của "+label;
+      case "count_invalid" -> "Đếm ô sai kiểu của "+label;
+      case "count_distinct" -> "Đếm giá trị khác nhau của "+label;
+      case "avg" -> "Tính trung bình của "+label;
+      case "min" -> "Tìm giá trị nhỏ nhất của "+label;
+      case "max" -> "Tìm giá trị lớn nhất của "+label;
+      default -> "Tính tổng của "+label;
+    };
+  }
+  private static String displayValue(JsonNode node){
+    return ChatNarrative.bounded(node.isTextual()?node.asText():node.isNumber()?node.decimalValue().stripTrailingZeros().toPlainString():node.toString(),100);
   }
   private static Column column(Map<String,Column> columns,String name){
     Column column=columns.get(name);if(column==null) throw Api.bad("Cột không nằm trong dataset");return column;

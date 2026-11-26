@@ -90,6 +90,7 @@ public class Connections {
     try(Connection c=open(id); var st=c.prepareStatement("""
         SELECT table_schema,table_name FROM information_schema.tables
         WHERE table_type='BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema')
+        AND NOT (table_schema='uploads' AND table_name ~ '^csv_[a-f0-9]{32}_invalid_cells$')
         ORDER BY table_schema,table_name
         """); var rs=st.executeQuery()) {
       List<Map<String,Object>> rows=new ArrayList<>();

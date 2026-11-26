@@ -41,4 +41,26 @@ class ChatAnalysisPresentationTests {
     var result=ChatAnalysisPresentation.query(UUID.randomUUID(),Map.of("rows",List.of()),mapper.readTree("{\"metrics\":[]}"));
     assertEquals("success",result.get("status"));assertTrue(charts(result).isEmpty());
   }
+  @Test void ungroupedSummaryIncludesEachComputedMetric() throws Exception {
+    var config=mapper.readTree("""
+        {"groupBy":[],"metrics":[{"aggregate":"count_invalid","alias":"invalid"},{"aggregate":"avg","alias":"average"}]}
+        """);
+    var data=Map.<String,Object>of("rows",List.of(Map.of("invalid",0,"average",345)),
+        "metricLabels",Map.of("invalid","Số ô sai kiểu","average","Trung bình doanh thu"));
+    assertFalse(ChatAnalysisPresentation.isQualityQuery(config));
+    assertEquals("Số ô sai kiểu là 0. Trung bình doanh thu là 345.",
+        ChatAnalysisPresentation.totalsSummary(data,config).orElseThrow());
+  }
+  @Test void recoversBranchFocusWithoutAssumingAUniqueLowestBranch() throws Exception {
+    var ranked=mapper.readTree("""
+        {"status":"success","data":{"rows":[{"Chi nhánh":"B","Tổng doanh thu":26580},
+        {"Chi nhánh":"A","Tổng doanh thu":26880}]}}
+        """);
+    assertEquals("B",ChatAnalysisPresentation.branchFocus(ranked).orElseThrow());
+    assertTrue(ChatAnalysisPresentation.branchFocus(mapper.readTree(ranked.toString().replace("26880","26580"))).isEmpty());
+    var explicit=mapper.readTree("""
+        {"status":"success","branchComparison":{"branch":"A","referenceBranch":"B","delta":300}}
+        """);
+    assertEquals("A",ChatAnalysisPresentation.branchFocus(explicit).orElseThrow());
+  }
 }

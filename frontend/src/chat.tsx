@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ArrowUp, ArrowUpRight, ChartColumn, Database, LayoutDashboard, MessageSquare, PanelRight, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { api } from './api'
 import type { Chart, Dashboard, Dataset, Conversation, ConversationDetail, ChatResponse } from './api'
 import { Empty, SectionTitle } from './ui'
@@ -9,13 +10,19 @@ import { ExplorationReportDialog } from './exploration'
 type Done = (message: string) => void
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Thao tác không thành công'
 
-export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
-  datasets: Dataset[]; charts: Chart[]; dashboards: Dashboard[]; canEdit: boolean; done: Done
+export const analysisPrompts = [
+  { label: 'Khám phá chất lượng dữ liệu', question: 'Dataset này có bao nhiêu dòng, cột và giá trị thiếu?', icon: Database },
+  { label: 'Tìm xu hướng và bất thường', question: 'Phát hiện xu hướng và bất thường từ dataset.', icon: ChartColumn },
+  { label: 'Tạo dashboard tổng quan', question: 'Tạo dashboard tổng quan từ dataset.', icon: LayoutDashboard },
+]
+
+export function ChatPage({ datasets, charts, dashboards, canEdit, done, initialDraft = '' }: {
+  datasets: Dataset[]; charts: Chart[]; dashboards: Dashboard[]; canEdit: boolean; done: Done; initialDraft?: string
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConv, setSelectedConv] = useState<ConversationDetail | null>(null)
   const [datasetId, setDatasetId] = useState('')
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(initialDraft)
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [sidebarHidden, setSidebarHidden] = useState(false)
@@ -23,6 +30,8 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
   const [reportDatasetId, setReportDatasetId] = useState<string | null>(null)
   const [dashboardVersions, setDashboardVersions] = useState<Record<string, number>>({})
   const dashboardTrigger = useRef<HTMLElement>(null)
+  const messagesList = useRef<HTMLDivElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   const leaveDashboard = useRef<(() => boolean) | null>(null)
 
   function openDashboard(id: string, trigger: HTMLElement) {
@@ -46,6 +55,10 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
     loadConversations()
   }, [])
 
+  useEffect(() => {
+    if (busy && messagesList.current) messagesList.current.scrollTop = messagesList.current.scrollHeight
+  }, [busy, selectedConv?.messages.length])
+
   async function loadConversations() {
     try {
       const convs = await api<Conversation[]>('/chat/conversations')
@@ -55,25 +68,27 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
     }
   }
 
-  async function createConversation() {
-    if (!datasetId || !canEdit || busy || leaveDashboard.current?.() === false) return
-    try {
-      const dataset = datasets.find(d => d.id === datasetId)
-      const title = `Chat: ${dataset?.name || 'Dataset'}`
-      const result = await api<{ id: string }>('/chat/conversations', 'POST', { datasetId, title })
-      await loadConversations()
-      await openConversation(result.id)
-      done('Đã tạo cuộc hội thoại mới.')
-    } catch (e) {
-      setStatus(errorText(e))
-    }
+  function startNewDraft() {
+    if (leaveDashboard.current?.() === false) return
+    setSelectedConv(null)
+    setDashboardId(null)
+    setStatus('')
+    fillDraft('')
+  }
+
+  function fillDraft(text: string) {
+    setMessage(text)
+    input.current?.focus()
   }
 
   async function openConversation(id: string) {
     if (selectedConv?.id !== id && leaveDashboard.current?.() === false) return
     try {
       const conv = await api<ConversationDetail>(`/chat/conversations/${id}`)
-      if (selectedConv?.id !== conv.id) setDashboardId(null)
+      if (selectedConv?.id !== conv.id) {
+        setDashboardId(null)
+        setMessage('')
+      }
       setSelectedConv(conv)
       setDatasetId(conv.dataset_id)
       setStatus('')
@@ -98,52 +113,60 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
     }
   }
 
-  async function sendMessage(e: React.FormEvent) {
+  function sendMessage(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedConv || !message.trim() || busy || !canEdit) return
+    void submitTurn(message.trim())
+  }
+
+  async function submitTurn(userMessage: string, suggestion?: { messageId: string; id: string }) {
+    if (!datasetId || !userMessage || busy || !canEdit) return
+    if (!selectedConv && leaveDashboard.current?.() === false) return
 
     setBusy(true)
     setStatus('')
-    const userMessage = message.trim()
-    setMessage('')
+    if (!suggestion) setMessage('')
 
-    // Optimistic update: show user message immediately
-    const optimisticUserMsg = {
-      id: 'temp-' + Date.now(),
-      conversation_id: selectedConv.id,
-      role: 'user' as const,
-      content: userMessage,
-      metadata_json: '{}',
-      created_at: new Date().toISOString()
-    }
-    setSelectedConv(prev => prev ? {
-      ...prev,
-      messages: [...prev.messages, optimisticUserMsg]
-    } : null)
-
+    let conversation = selectedConv
+    const tempId = 'temp-' + Date.now()
     try {
-      const response = await api<ChatResponse>('/chat/message', 'POST', {
-        conversationId: selectedConv.id,
-        message: userMessage
+      if (!conversation) {
+        const title = `Chat: ${selectedDataset?.name || 'Dataset'}`
+        const { id } = await api<{ id: string }>('/chat/conversations', 'POST', { datasetId, title })
+        const now = new Date().toISOString()
+        setDashboardId(null)
+        conversation = {
+          id, title, dataset_id: datasetId, created_at: now, updated_at: now, messages: [],
+        }
+      }
+      const conversationId = conversation.id
+      setSelectedConv({
+        ...conversation,
+        messages: [...conversation.messages, {
+          id: tempId, role: 'user', content: userMessage,
+          metadata_json: '{}', created_at: new Date().toISOString(),
+        }],
       })
 
-      // Reload conversation to get updated messages
-      await openConversation(selectedConv.id)
-      await loadConversations() // Update list timestamps
+      const response = suggestion
+        ? await api<ChatResponse>(`/chat/conversations/${conversationId}/messages/${suggestion.messageId}/suggestions/${suggestion.id}`, 'POST')
+        : await api<ChatResponse>('/chat/message', 'POST', { conversationId, message: userMessage })
+
+      await openConversation(conversationId)
+      await loadConversations()
       if (response.dashboard_id) {
         const updated = response.dashboard_id
         setDashboardVersions(versions => ({ ...versions, [updated]: (versions[updated] ?? 0) + 1 }))
-        if (dashboardId) setDashboardId(updated)
+        if (dashboardId && selectedConv) setDashboardId(updated)
         if (response.intent === 'create_dashboard') done('Đã tạo dashboard từ hội thoại.')
       }
     } catch (e) {
       setStatus(errorText(e))
-      setMessage(userMessage) // Restore message on error
-      // Remove optimistic message on error
+      if (!suggestion) setMessage(draft => draft || userMessage)
       setSelectedConv(prev => prev ? {
         ...prev,
-        messages: prev.messages.filter(m => m.id !== optimisticUserMsg.id)
+        messages: prev.messages.filter(m => m.id !== tempId)
       } : null)
+      if (!selectedConv && conversation) await loadConversations()
     } finally {
       setBusy(false)
     }
@@ -154,23 +177,30 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
   const layoutClass = dashboardId ? ' with-dashboard' : sidebarHidden ? ' without-sidebar' : ''
 
   return (
-    <div className={'two-column wide-left chat-layout' + layoutClass}>
-      <section className={`surface chat-main ${sidebarHidden && !dashboardId ? 'full-width' : ''}`}>
-        <div className="panel-head">
-          <SectionTitle label="Chat AI" />
-          {selectedConv && <button className="text-link" disabled={busy} onClick={() => {
-            if (leaveDashboard.current?.() === false) return
-            setSelectedConv(null); setDashboardId(null); setStatus('')
-          }}>Hội thoại mới</button>}
-          {!dashboardId && <button className="text-link" onClick={() => setSidebarHidden(!sidebarHidden)}>
-            {sidebarHidden ? '☰ Hiện danh sách' : '⇄ Ẩn danh sách'}
-          </button>}
-        </div>
-        <div className="actions">
-          <button className="secondary-button" disabled={!datasetId || busy} onClick={() => setReportDatasetId(datasetId)}>Khám phá dataset trong Chat</button>
-          {!canEdit && <span className="hint">Bạn có thể xem báo cáo và dashboard; gửi yêu cầu AI cần quyền phân tích.</span>}
-        </div>
-        {dashboards.length > 0 && <label className="chat-dashboard-picker">Dashboard đã lưu
+    <div className={'two-column wide-left chat-layout analysis-workspace' + layoutClass}>
+      <section className="chat-main" aria-labelledby="chat-page-title">
+        <header className="analysis-toolbar">
+          <h1 id="chat-page-title"><Sparkles size={19} aria-hidden="true" /> Chat AI</h1>
+          <div className="analysis-toolbar-actions">
+            {selectedConv && canEdit && <button className="secondary-button" disabled={busy} onClick={startNewDraft}>
+              <Plus size={15} aria-hidden="true" /> Hội thoại mới
+            </button>}
+            {!dashboardId && <button className="analysis-icon-button" aria-label={sidebarHidden ? 'Hiện lịch sử hội thoại' : 'Ẩn lịch sử hội thoại'}
+              title={sidebarHidden ? 'Hiện lịch sử hội thoại' : 'Ẩn lịch sử hội thoại'} aria-expanded={!sidebarHidden} aria-controls={showSidebar ? 'chat-history' : undefined}
+              onClick={() => setSidebarHidden(!sidebarHidden)}><PanelRight size={18} aria-hidden="true" /></button>}
+          </div>
+        </header>
+        <div className="analysis-sources">
+          {!selectedConv && <label className="analysis-picker">Dataset
+            <select value={datasetId} disabled={busy} onChange={e => setDatasetId(e.target.value)}>
+              <option value="">Chọn dataset</option>
+              {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </label>}
+          <button className="secondary-button analysis-explore" disabled={!datasetId || busy} onClick={() => setReportDatasetId(datasetId)}>
+            <Database size={15} aria-hidden="true" /> Khám phá dataset
+          </button>
+          {dashboards.length > 0 && <label className="chat-dashboard-picker analysis-picker">Dashboard đã lưu
           <select value={dashboardId && dashboards.some(dashboard => dashboard.id === dashboardId) ? dashboardId : ''}
             onChange={event => {
               if (event.target.value) openDashboard(event.target.value, event.currentTarget)
@@ -179,75 +209,57 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
             <option value="">Chọn dashboard đã lưu</option>
             {dashboards.map(dashboard => <option key={dashboard.id} value={dashboard.id}>{dashboard.name}</option>)}
           </select>
-        </label>}
+          </label>}
+        </div>
 
-        {!selectedConv ? (
-          <div className="chat-empty">
-            <Empty
-              title="Chưa chọn cuộc hội thoại"
-              text="Chọn dataset và tạo cuộc hội thoại mới để bắt đầu hỏi đáp dữ liệu."
-            />
-            <div className="form-grid" style={{ maxWidth: '400px', margin: '2rem auto 0' }}>
-              <label className="wide">
-                Chọn dataset để phân tích
-                <select value={datasetId} onChange={e => setDatasetId(e.target.value)}>
-                  <option value="">Chọn dataset</option>
-                  {datasets.map(d => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="primary-button"
-                disabled={!datasetId || !canEdit || busy}
-                onClick={createConversation}
-              >
-                Tạo cuộc hội thoại mới
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="chat-header">
+        {selectedConv && <div className="chat-header">
               <div>
                 <strong>{selectedConv.title || 'Cuộc hội thoại'}</strong>
                 <small>Dataset: {selectedDataset?.name || 'N/A'}</small>
               </div>
-              <button
-                className="text-link danger"
+              {canEdit && <button
+                className="analysis-icon-button danger"
                 disabled={busy || !canEdit}
                 onClick={() => deleteConversation(selectedConv.id)}
-                title="Xóa cuộc hội thoại"
+                title="Xóa cuộc hội thoại" aria-label="Xóa cuộc hội thoại"
               >
-                Xóa
-              </button>
-            </div>
+                <Trash2 size={16} aria-hidden="true" />
+              </button>}
+            </div>}
 
-            <div className="chat-messages">
-              {selectedConv.messages.length === 0 ? (
+            <div className={`chat-messages${!selectedConv?.messages.length ? ' is-empty' : ''}`} ref={messagesList} aria-label="Tin nhắn">
+              {!selectedConv?.messages.length ? (
                 <div className="chat-welcome">
-                  <p>Xin chào! Tôi có thể giúp bạn phân tích dữ liệu từ dataset <strong>{selectedDataset?.name}</strong>.</p>
-                  <p className="muted">Hỏi về chất lượng, thống kê, tương quan, ngoại lệ, kiểm định hoặc yêu cầu tạo dashboard. Kết quả và thao tác đều ở trong Chat.</p>
-                  <div className="actions">{['Dataset này có bao nhiêu dòng, cột và giá trị thiếu?', 'Phát hiện xu hướng và bất thường từ dataset.', 'Tạo dashboard tổng quan từ dataset.'].map(prompt => <button key={prompt} className="secondary-button" disabled={!canEdit || busy} onClick={() => setMessage(prompt)}>{prompt}</button>)}</div>
+                  <span className="analysis-welcome-mark" aria-hidden="true"><Sparkles size={27} strokeWidth={1.7} /></span>
+                  <h2>{canEdit ? 'Bạn muốn phân tích gì?' : 'Xem dữ liệu trong Chat'}</h2>
+                  <p>{canEdit
+                    ? datasetId ? 'Hỏi về dataset đang chọn hoặc bắt đầu với một gợi ý.' : 'Thêm một dataset để bắt đầu phân tích.'
+                    : 'Chọn một dashboard đã lưu hoặc mở báo cáo khám phá dataset.'}</p>
+                  {canEdit && <div className="analysis-prompts">
+                    {analysisPrompts.map(({ label, question, icon: Icon }) => <button key={label} disabled={!datasetId || busy} onClick={() => fillDraft(question)}>
+                      <Icon size={17} aria-hidden="true" /><span>{label}</span><ArrowUpRight size={15} aria-hidden="true" />
+                    </button>)}
+                  </div>}
                 </div>
               ) : (
                 selectedConv.messages.map(msg => (
                   <div key={msg.id} className={`chat-message ${msg.role}`}>
                     <div className="message-header">
+                      {msg.role === 'assistant' && <span className="analysis-author"><Sparkles size={14} aria-hidden="true" /> Pythera</span>}
                       <small>{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</small>
                     </div>
                     {msg.role === 'assistant' ? <ChatResult content={msg.content} metadataJson={msg.metadata_json}
                       datasetId={selectedConv.dataset_id} datasets={datasets} onOpenReport={setReportDatasetId}
                       verification={canEdit ? { conversationId: selectedConv.id, messageId: msg.id } : undefined}
+                      onSuggestion={canEdit ? action => void submitTurn(action.label, { messageId: msg.id, id: action.id }) : undefined}
+                      pending={busy}
                       openDashboard={openDashboard} dashboardVersions={dashboardVersions} />
                       : <div className="message-content">{msg.content.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>}
                   </div>
                 ))
               )}
               {busy && (
-                <div className="chat-message assistant">
+                <div className="chat-message assistant" role="status">
                   <div className="message-content">
                     <p className="muted">Đang phân tích...</p>
                   </div>
@@ -255,24 +267,27 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
               )}
             </div>
 
-            <form className="chat-input-form" onSubmit={sendMessage}>
-              <input
-                type="text"
+            {status && <p className="inline-status analysis-status" role="status">{status}</p>}
+            {canEdit && <form className="chat-input-form" onSubmit={sendMessage}>
+              <textarea
+                ref={input}
                 value={message}
                 onChange={e => setMessage(e.target.value)}
-                placeholder="Nhập câu hỏi về dữ liệu..."
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+                  e.preventDefault()
+                  void submitTurn(message.trim())
+                }}
+                placeholder="Hỏi về dữ liệu…"
                 aria-label="Câu hỏi dữ liệu"
+                rows={1}
                 maxLength={4000}
-                disabled={busy || !canEdit}
+                disabled={busy || !datasetId}
               />
-              <button type="submit" className="primary-button" disabled={!message.trim() || busy || !canEdit}>
-                {busy ? 'Đang gửi...' : 'Gửi'}
+              <button type="submit" className="primary-button" aria-label="Gửi câu hỏi" title="Gửi câu hỏi" disabled={!datasetId || !message.trim() || busy}>
+                <ArrowUp size={20} aria-hidden="true" />
               </button>
-            </form>
-          </>
-        )}
-
-        {status && <p className="inline-status">{status}</p>}
+            </form>}
       </section>
 
       {reportDatasetId && <ExplorationReportDialog datasetId={reportDatasetId} onClose={() => setReportDatasetId(null)} />}
@@ -283,36 +298,13 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
         }} />}
 
       {showSidebar && (
-        <section className="surface chat-conversations-sidebar">
+        <aside className="chat-conversations-sidebar" id="chat-history" aria-label="Lịch sử hội thoại">
           <div className="panel-head">
-            <SectionTitle label="Cuộc hội thoại" count={conversations.length} />
-            <button className="text-link" onClick={loadConversations}>
-              ↻
+            <SectionTitle label="Lịch sử hội thoại" />
+            <button className="analysis-icon-button" onClick={loadConversations} aria-label="Tải lại lịch sử" title="Tải lại lịch sử">
+              <RefreshCw size={15} aria-hidden="true" />
             </button>
           </div>
-
-        {!selectedConv && (
-          <div className="form-grid">
-            <label className="wide">
-              Dataset
-              <select value={datasetId} onChange={e => setDatasetId(e.target.value)}>
-                <option value="">Chọn dataset</option>
-                {datasets.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="primary-button"
-              disabled={!datasetId || !canEdit || busy}
-              onClick={createConversation}
-            >
-              Tạo mới
-            </button>
-          </div>
-        )}
 
         <div className="chat-conversations-list">
           {conversations.length ? (
@@ -320,9 +312,11 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
               <button
                 key={conv.id}
                 disabled={busy}
+                aria-current={selectedConv?.id === conv.id ? 'true' : undefined}
                 className={`list-row clickable full-row ${selectedConv?.id === conv.id ? 'active' : ''}`}
                 onClick={() => openConversation(conv.id)}
               >
+                <MessageSquare size={16} strokeWidth={1.7} aria-hidden="true" />
                 <span>
                   <strong>{conv.title}</strong>
                   <small>
@@ -335,7 +329,7 @@ export function ChatPage({ datasets, charts, dashboards, canEdit, done }: {
             <Empty title="Chưa có cuộc hội thoại" text="Tạo cuộc hội thoại đầu tiên để bắt đầu." />
           )}
         </div>
-        </section>
+        </aside>
       )}
     </div>
   )

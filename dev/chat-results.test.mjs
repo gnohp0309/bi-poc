@@ -1,6 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { describeScalarAnswer, parseChatResult, parseResultTable, formatResultValue } from '../frontend/src/chat-result-model.ts'
+import { openUiChartProgram, openUiTableProgram } from '../frontend/src/chat-openui-program.ts'
+
+test('OpenUI renders only the executed chart points and protects missing values', () => {
+  const chart = { chartType: 'bar', rows: [{ label: 'A', value: 6900 }, { label: 'B', value: '6180.5' }] }
+  assert.match(openUiChartProgram(chart), /"Giá trị":6900/)
+  assert.match(openUiChartProgram(chart), /"Giá trị":6180\.5/)
+  assert.equal(openUiChartProgram({ ...chart, rows: [{ label: 'A', value: null }] }), undefined)
+  assert.equal(openUiChartProgram({ ...chart, chartType: 'heatmap' }), undefined)
+  assert.equal(openUiChartProgram({ chartType: 'pie', rows: [{ label: 'A', value: -10 }] }), undefined)
+})
+
+test('OpenUI table preserves exact values and hands Markdown back to the plain table', () => {
+  const program = openUiTableProgram(['Tổng', 'Ghi chú'],
+    [{ 'Tổng': '9007199254740993.12', 'Ghi chú': 'A"\nroot = Table()' }, { 'Tổng': null }])
+  assert.equal(program, 'root = Table(' + JSON.stringify(['Tổng', 'Ghi chú']) + ', ' +
+    JSON.stringify([['9007199254740993.12', 'A"\nroot = Table()'], ['NULL', '—']]) + ')')
+  assert.equal(openUiTableProgram(['Ghi chú'], [{ 'Ghi chú': '[nhãn](https://example.com)' }]), undefined)
+})
 
 test('summarizes a saved scalar using its executed value without rounding or confusing NULL with zero', () => {
   const metadata = {

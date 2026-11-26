@@ -58,7 +58,9 @@ class ChatVerification {
   private Result verifyQuery(UUID conversation, Message message, JsonNode saved, Auth.Actor actor) throws java.io.IOException {
     var metadata = analysis.metadata(message.datasetId());
     var expected = new VerificationQuestion(metadata).query(question(conversation, message.sequence(), saved));
-    if (expected.isEmpty())
+    // A short follow-up gets its full intent from the server-resolved scope saved at that turn.
+    var reference = expected.isPresent() ? expected.get() : Chat.readScope(mapper, saved.path("expected_query_scope"));
+    if (reference == null)
       return unavailable("Hãy nêu rõ phép tổng hợp, tên cột hoặc số dòng cần đếm và phạm vi muốn kiểm tra.");
     var plan = DatasetAnalysis.requestReader(mapper).<DatasetAnalysis.Request>readValue(saved.path("query_config"));
     var metrics = plan.metrics();
@@ -71,7 +73,7 @@ class ChatVerification {
         .map(f -> VerificationQuestion.canonical(f, metadata)).toList();
     var observed = new Observed(new Scope(metric.aggregate(), metric.column(), filters), value,
         plan.groupBy() != null && !plan.groupBy().isEmpty());
-    return compare(metadata, expected.get(), observed, false, actor);
+    return compare(metadata, reference, observed, false, actor);
   }
 
   private Result verifyKpi(UUID conversation, Message message, JsonNode saved, Auth.Actor actor) throws java.io.IOException {
