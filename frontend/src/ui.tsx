@@ -1,3 +1,5 @@
+import { Badge, Table } from './components/ui/primitives'
+import { Inbox, type LucideIcon } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart, ScatterChart, HeatmapChart } from 'echarts/charts'
@@ -17,7 +19,8 @@ export function ChartCanvas({ data, onPoint }: { data: ChartData; onPoint?: (ind
   useEffect(() => {
     if (!ref.current || !data.rows.length || data.chartType === 'kpi' || data.chartType === 'map') return
     const chart = echarts.init(ref.current)
-    const colors = ['#476B62', '#A7BDB0', '#DAC9A6', '#8D9FB5', '#C2A69B']
+    const style = getComputedStyle(ref.current)
+    const colors = Array.from({ length: 5 }, (_, i) => style.getPropertyValue(`--chart-${i + 1}`).trim() || '#00866e')
     const points = data.rows.map(row => ({ name: String(row.label ?? '—'), value: numericValue(row.value) }))
     chart.setOption(extendedOptions(data) || (data.chartType === 'pie' || data.chartType === 'donut' ? {
       color: colors,
@@ -33,7 +36,7 @@ export function ChartCanvas({ data, onPoint }: { data: ChartData; onPoint?: (ind
       yAxis: { type: 'value', axisLabel: { color: '#777C79', formatter: (v: number) => Math.abs(v) >= 1_000_000 ? `${formatNumber(v / 1_000_000)} tr` : formatNumber(v) }, splitLine: { lineStyle: { color: '#EDF0EC' } } },
       series: [{ type: data.chartType, data: points.map(p => p.value), smooth: true,
         itemStyle: { color: colors[0], borderRadius: data.chartType === 'bar' ? [4, 4, 0, 0] : 0 },
-        areaStyle: data.chartType === 'line' ? { color: 'rgba(71,107,98,.07)' } : undefined }]
+        areaStyle: data.chartType === 'line' ? { color: 'rgba(0,134,110,.10)' } : undefined }]
     }))
     chart.on('click', (event: unknown) => {
       const point = event as { dataIndex: number; seriesName?: string; name?: string }
@@ -55,15 +58,16 @@ export function ChartCanvas({ data, onPoint }: { data: ChartData; onPoint?: (ind
 
 export function DataTable({ result, max = 20 }: { result: QueryResult | null; max?: number }) {
   if (!result) return <div className="empty">Chưa có dữ liệu xem trước.</div>
-  return <div className="table-scroll"><table><thead><tr>{result.columns.map((column, i) => <th key={`${column}-${i}`}>{column}</th>)}</tr></thead>
-    <tbody>{result.rows.slice(0, max).map((row, i) => <tr key={i}>{result.columns.map((column, j) => <td key={`${column}-${j}`}>{String(row[column] ?? '—')}</td>)}</tr>)}</tbody></table>
-    <p className="table-caption">{result.rows.length} dòng hiển thị{result.truncated ? ' · Kết quả được giới hạn ở 500 dòng' : ''}</p></div>
+  return <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng dữ liệu"><Table><thead><tr>{result.columns.map((column, i) => <th scope="col" key={`${column}-${i}`}>{column}</th>)}</tr></thead>
+    <tbody>{result.rows.slice(0, max).map((row, i) => <tr key={i}>{result.columns.map((column, j) => <td key={`${column}-${j}`}>{String(row[column] ?? '—')}</td>)}</tr>)}</tbody></Table>
+    <p className="table-caption">{Math.min(result.rows.length, max)} dòng hiển thị{result.truncated ? ' · Kết quả được giới hạn ở 500 dòng' : ''}</p></div>
 }
 
 export function Empty({ title, text }: { title: string; text: string }) {
-  return <div className="empty-state"><span className="empty-mark">∅</span><h3>{title}</h3><p>{text}</p></div>
+  return <div className="empty-state"><span className="empty-mark"><Inbox size={20} aria-hidden="true" /></span><h3>{title}</h3><p>{text}</p></div>
 }
 
-export function SectionTitle({ label, count }: { label: string; count?: number }) {
-  return <div className="section-title"><h2>{label}</h2>{count !== undefined && <span className="count">{count}</span>}</div>
+export function SectionTitle({ label, count, icon: Icon }: { label: string; count?: number; icon?: LucideIcon }) {
+  return <div className="section-title"><h2>{Icon && <Icon size={17} aria-hidden="true" />}{label}</h2>
+    {count !== undefined && <Badge>{count.toLocaleString('vi-VN')}</Badge>}</div>
 }

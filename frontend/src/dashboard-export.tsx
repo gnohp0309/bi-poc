@@ -1,3 +1,4 @@
+import { Button, Card } from './components/ui/primitives'
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { DashboardDetail, Dataset } from './api'
@@ -55,8 +56,8 @@ export function DashboardExport({ dashboard, filters, datasets, refreshedAt, roo
     } catch (e) { if (active.current) setStatus(`Không xuất được file: ${(e as Error).message}`) }
     finally { running.current = false; if (active.current) { setFormat(''); onBusyChange(false) } }
   }
-  return <section className="surface dashboard-export-toolbar"><h2>Xuất dashboard</h2><p className="hint">Xuất dữ liệu đang hiển thị với bộ lọc đã áp dụng. PNG/PDF giữ bố cục hiện tại; Excel gồm toàn bộ bảng số liệu đã tải của mỗi biểu đồ. Ẩn legend hoặc zoom không lọc các dòng trong Excel. Lưu hoặc hủy bố cục đang sửa trước khi xuất.</p>
-    <div className="actions">{(['png', 'pdf', 'xlsx'] as const).map(type => <button key={type} className="secondary-button" disabled={disabled || !!format} onClick={() => run(type)}>{format === type ? 'Đang xuất…' : type === 'xlsx' ? 'Xuất Excel' : `Xuất ${type.toUpperCase()}`}</button>)}</div>
+  return <Card className="dashboard-export-toolbar"><h2>Xuất dashboard</h2><p className="hint">Xuất dữ liệu đang hiển thị với bộ lọc đã áp dụng. PNG/PDF giữ bố cục hiện tại; Excel gồm toàn bộ bảng số liệu đã tải của mỗi biểu đồ. Ẩn legend hoặc zoom không lọc các dòng trong Excel. Lưu hoặc hủy bố cục đang sửa trước khi xuất.</p>
+    <div className="actions">{(['png', 'pdf', 'xlsx'] as const).map(type => <Button variant="outline" key={type} className="secondary-button" disabled={disabled || !!format} onClick={() => run(type)}>{format === type ? 'Đang xuất…' : type === 'xlsx' ? 'Xuất Excel' : `Xuất ${type.toUpperCase()}`}</Button>)}</div>
     {status && <p role="status" className={status.startsWith('Không') ? 'form-error' : 'hint'}>{status}</p>}
-  </section>
+  </Card>
 }

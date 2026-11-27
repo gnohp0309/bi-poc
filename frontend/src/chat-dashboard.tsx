@@ -1,3 +1,4 @@
+import { Button } from './components/ui/primitives'
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { api } from './api'
@@ -57,15 +58,15 @@ export function ChatDashboard({ id, openDashboard, revision = 0, datasets, expor
         <span className="eyebrow">DASHBOARD TRONG HỘI THOẠI</span>
         <h3>{dashboard?.name || 'Biểu đồ từ dashboard đã tạo'}</h3>
       </div>
-      <button className="text-link" onClick={event => openDashboard(id, event.currentTarget)}>Mở dashboard trong Chat</button>
+      <Button variant="ghost" size="sm" className="text-link" onClick={event => openDashboard(id, event.currentTarget)}>Mở dashboard trong Chat</Button>
     </div>
     {exportFormat && <div className="actions">
-      <button className="secondary-button" disabled={!dashboard || exportBusy} onClick={download}>{exportBusy ? 'Đang tạo file…' : `Tải ${formatLabel}`}</button>
+      <Button variant="outline" className="secondary-button" disabled={!dashboard || exportBusy} onClick={download}>{exportBusy ? 'Đang tạo file…' : `Tải ${formatLabel}`}</Button>
       {exportError && <p role="alert">{exportError}</p>}
     </div>}
     {error ? <div className="chat-chart-status" role="status">
       <p>Chưa tải được các biểu đồ: {error}</p>
-      <button className="secondary-button" onClick={retry}>Tải lại biểu đồ</button>
+      <Button variant="outline" className="secondary-button" onClick={retry}>Tải lại biểu đồ</Button>
     </div> : !dashboard ? <p className="chat-chart-status muted" role="status">Đang tải biểu đồ…</p>
       : <div ref={capture} className={exportFormat ? 'dashboard-export-surface' : undefined}>
         {(exportFormat || dashboard.scopeFilters?.length) ? <ExportContext filters={dashboard.scopeFilters || []} datasets={datasets} refreshedAt={dashboard.refreshedAt} /> : null}
@@ -86,7 +87,7 @@ export function ChatDashboardPanel({ id, datasets, charts, done, onClose, onDele
 }) {
   const [expanded, setExpanded] = useState(false)
   return <aside className={'surface chat-dashboard-panel' + (expanded ? ' is-expanded' : '')} aria-labelledby="chat-dashboard-panel-title">
-    <button className="text-link" onClick={() => setExpanded(value => !value)}>{expanded ? 'Thu gọn trong Chat' : 'Mở rộng vùng dashboard'}</button>
+    <Button variant="ghost" size="sm" className="text-link" onClick={() => setExpanded(value => !value)}>{expanded ? 'Thu gọn trong Chat' : 'Mở rộng vùng dashboard'}</Button>
     <DashboardsPage dashboards={[]} charts={charts} datasets={datasets} canEdit={false} done={done}
       initialId={id} panel={{ onClose, onDeleted, leaveGuard }} />
   </aside>

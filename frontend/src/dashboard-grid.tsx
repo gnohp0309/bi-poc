@@ -1,3 +1,4 @@
+import { Button, Input } from './components/ui/primitives'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import type { ChartData } from './api'
@@ -52,13 +53,13 @@ export function DashboardGrid({ charts, items, editing = false, compactBelow, on
         return <article key={item.chartId} className="surface dashboard-chart dashboard-grid-tile" data-chart-id={item.chartId}
           style={{ gridColumn: `${item.x + 1} / span ${item.w}`, gridRow: `${item.y + 1} / span ${item.h}` }}>
           <div className="chart-head"><div><span className="eyebrow">{chart.chartType.toUpperCase()} / {chart.aggregate.toUpperCase()}</span><h3>{chart.name}</h3></div>
-            <div className="dashboard-tile-actions" data-export-exclude>{onEditChart && <button className="text-link" disabled={editing} onClick={() => onEditChart(item.chartId)}>Sửa biểu đồ</button>}{onRemove && <button className="danger-link" disabled={editing} onClick={() => onRemove(item.chartId)}>Bỏ</button>}</div>
+            <div className="dashboard-tile-actions" data-export-exclude>{onEditChart && <Button variant="ghost" size="sm" className="text-link" disabled={editing} onClick={() => onEditChart(item.chartId)}>Sửa biểu đồ</Button>}{onRemove && <Button variant="destructive" size="sm" className="danger-link" disabled={editing} onClick={() => onRemove(item.chartId)}>Bỏ</Button>}</div>
           </div>
-          {editing && <><button className="dashboard-move-handle" disabled={compact} aria-label={`Di chuyển ${chart.name}`} onPointerDown={e => start(e, item, 'move')} onPointerMove={move} onPointerUp={stop} onPointerCancel={cancel} onLostPointerCapture={stop}>↕ Di chuyển</button>
+          {editing && <><Button variant="plain" className="dashboard-move-handle" disabled={compact} aria-label={`Di chuyển ${chart.name}`} onPointerDown={e => start(e, item, 'move')} onPointerMove={move} onPointerUp={stop} onPointerCancel={cancel} onLostPointerCapture={stop}>↕ Di chuyển</Button>
             <PositionForm item={item} onApply={candidate => { try { onChange?.(placeItem(layout, candidate)) } catch (e) { onError?.((e as Error).message) } }} /></>}
           <div className="dashboard-grid-plot"><ChartCanvas data={chart} onPoint={onDrill && !editing ? index => onDrill(chart, index) : undefined} /></div>
-          {onDrill && !editing && chart.rows.length > 0 && <button className="text-link" data-export-exclude onClick={() => onDrill(chart)}>Xem dữ liệu chi tiết</button>}
-          {editing && <button className="dashboard-resize-handle" disabled={compact} aria-label={`Đổi kích thước ${chart.name}`} onPointerDown={e => start(e, item, 'resize')} onPointerMove={move} onPointerUp={stop} onPointerCancel={cancel} onLostPointerCapture={stop}>↘</button>}
+          {onDrill && !editing && chart.rows.length > 0 && <Button variant="ghost" size="sm" className="text-link" data-export-exclude onClick={() => onDrill(chart)}>Xem dữ liệu chi tiết</Button>}
+          {editing && <Button variant="plain" className="dashboard-resize-handle" disabled={compact} aria-label={`Đổi kích thước ${chart.name}`} onPointerDown={e => start(e, item, 'resize')} onPointerMove={move} onPointerUp={stop} onPointerCancel={cancel} onLostPointerCapture={stop}>↘</Button>}
         </article>
       })}
     </div>
@@ -70,8 +71,8 @@ function PositionForm({ item, onApply }: { item: GridItem; onApply: (item: GridI
   useEffect(() => setValues({ x: String(item.x), y: String(item.y), w: String(item.w), h: String(item.h) }), [item.x, item.y, item.w, item.h])
   return <details className="dashboard-position-form"><summary>Vị trí & kích thước · X {item.x}, Y {item.y}, rộng {item.w}, cao {item.h}</summary>
     <form onSubmit={e => { e.preventDefault(); onApply({ chartId: item.chartId, x: Number(values.x), y: Number(values.y), w: Number(values.w), h: Number(values.h) }) }}>
-      {(['x', 'y', 'w', 'h'] as const).map(key => <label key={key}>{({ x: 'X', y: 'Y', w: 'Rộng', h: 'Cao' })[key]}<input aria-label={`Ô ${key}`} type="number" step={1} min={key === 'w' ? 3 : key === 'h' ? 6 : 0} max={key === 'x' ? 11 : key === 'y' ? 994 : key === 'w' ? 12 : 24} value={values[key]} onChange={e => setValues({ ...values, [key]: e.target.value })} required /></label>)}
-      <button className="secondary-button">Áp dụng ô</button>
+      {(['x', 'y', 'w', 'h'] as const).map(key => <label key={key}>{({ x: 'X', y: 'Y', w: 'Rộng', h: 'Cao' })[key]}<Input aria-label={`Ô ${key}`} type="number" step={1} min={key === 'w' ? 3 : key === 'h' ? 6 : 0} max={key === 'x' ? 11 : key === 'y' ? 994 : key === 'w' ? 12 : 24} value={values[key]} onChange={e => setValues({ ...values, [key]: e.target.value })} required /></label>)}
+      <Button variant="outline" className="secondary-button">Áp dụng ô</Button>
     </form>
   </details>
 }

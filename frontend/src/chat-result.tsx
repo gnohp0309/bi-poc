@@ -1,3 +1,4 @@
+import { Button, NativeSelect, Table } from './components/ui/primitives'
 import { Component, lazy, Suspense, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ChartData } from './api'
@@ -59,10 +60,10 @@ export function ChatResult({ metadataJson, content, openDashboard, dashboardVers
       {parsed.dashboardId && <ChatDashboard id={parsed.dashboardId} openDashboard={openDashboard} revision={dashboardVersions?.[parsed.dashboardId]} datasets={datasets} exportFormat={parsed.dashboardExport} />}
     </div>}
     {reportId && reportId.toLowerCase() === datasetId?.toLowerCase() && onOpenReport &&
-      <button className="secondary-button chat-exploration-button" onClick={() => onOpenReport(reportId)}>Xem báo cáo chi tiết</button>}
+      <Button variant="outline" className="secondary-button chat-exploration-button" onClick={() => onOpenReport(reportId)}>Xem báo cáo chi tiết</Button>}
     {!!parsed.suggestions?.length && onSuggestion && <div className="chat-analysis-suggestions" role="group" aria-label="Phân tích tiếp">
-      {parsed.suggestions.map(suggestion => <button className="secondary-button" type="button" key={suggestion.id}
-        onClick={() => onSuggestion(suggestion)} disabled={pending}>{suggestion.label}</button>)}
+      {parsed.suggestions.map(suggestion => <Button variant="outline" className="secondary-button" type="button" key={suggestion.id}
+        onClick={() => onSuggestion(suggestion)} disabled={pending}>{suggestion.label}</Button>)}
     </div>}
   </>
 }
@@ -120,16 +121,16 @@ function InteractiveAnalysisData({ charts, table }: { charts: ChartData[]; table
   const fallback = chart && <ChartBoundary key={chartIndex}><ChartCanvas data={chart} /></ChartBoundary>
   return <div className="chat-analysis-data">
     {chart && table && <div className="chat-analysis-switch" role="group" aria-label="Cách hiển thị kết quả">
-      <button type="button" aria-pressed={showChart} onClick={() => setView('chart')}>Biểu đồ</button>
-      <button type="button" aria-pressed={!showChart} onClick={() => setView('table')}>Bảng số liệu</button>
+      <Button variant="plain" type="button" aria-pressed={showChart} onClick={() => setView('chart')}>Biểu đồ</Button>
+      <Button variant="plain" type="button" aria-pressed={!showChart} onClick={() => setView('table')}>Bảng số liệu</Button>
     </div>}
     {showChart ? <section className="chat-openui-chart" aria-label="Biểu đồ từ kết quả">
       <div className="chat-openui-chart-header">
         <h4>{chart.name || 'Biểu đồ từ kết quả'}</h4>
-        {charts.length > 1 && <select aria-label="Chọn biểu đồ" value={chartIndex}
+        {charts.length > 1 && <NativeSelect aria-label="Chọn biểu đồ" value={chartIndex}
           onChange={event => setChartIndex(Number(event.target.value))}>
           {charts.map((item, index) => <option key={index} value={index}>{item.name || `Biểu đồ ${index + 1}`}</option>)}
-        </select>}
+        </NativeSelect>}
       </div>
       <ResultProgram program={program} fallback={fallback} />
       {chart.truncated && <p className="chat-result-warning" role="status">Biểu đồ hiển thị phần kết quả được trả về.</p>}
@@ -152,14 +153,14 @@ export function ResultTableView({ table, interactive = false, hideHeading = fals
   const visibleRows = useMemo(() => table.rows.slice(start, start + 25), [table.rows, start])
   const program = useMemo(() => interactive && openUiTableProgram(table.columns, visibleRows),
     [interactive, table.columns, visibleRows])
-  const fallback = <div className="table-scroll" tabIndex={0} aria-label="Bảng kết quả phân tích"><table><thead><tr>{table.columns.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>{visibleRows.map((row, i) => <tr key={start + i}>{table.columns.map(c => <td key={c}>{!Object.hasOwn(row, c) ? '—' : row[c] === null ? 'NULL' : String(row[c])}</td>)}</tr>)}</tbody></table></div>
+  const fallback = <div className="table-scroll" tabIndex={0} aria-label="Bảng kết quả phân tích"><Table><thead><tr>{table.columns.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>{visibleRows.map((row, i) => <tr key={start + i}>{table.columns.map(c => <td key={c}>{!Object.hasOwn(row, c) ? '—' : row[c] === null ? 'NULL' : String(row[c])}</td>)}</tr>)}</tbody></Table></div>
   return <div className="chat-result-section">{!hideHeading && <h4>Bảng số liệu</h4>}
     {table.truncated && <p className="chat-result-warning" role="status">Kết quả đã giới hạn. Bảng và biểu đồ không đại diện cho toàn bộ dòng/nhóm nguồn.{table.receivedRows > 500 && ` Chỉ hiển thị 500/${table.receivedRows} dòng đã nhận.`}</p>}
     {!table.rows.length ? <p className="muted">Không có dòng kết quả phù hợp.</p> : <>
       {program ? <div className="chat-openui-table" tabIndex={0} role="region" aria-label="Bảng kết quả phân tích">
         <ResultProgram program={program} fallback={fallback} />
       </div> : fallback}
-      <div className="chat-result-pagination"><span>Dòng {start + 1}–{Math.min(start + 25, table.rows.length)} / {table.rows.length} dòng kết quả</span>{(pages > 1 || !interactive) && <div><button type="button" className="secondary-button" disabled={current === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>Trước</button><button type="button" className="secondary-button" disabled={current + 1 >= pages} onClick={() => setPage(p => p + 1)}>Sau</button></div>}</div>
+      <div className="chat-result-pagination"><span>Dòng {start + 1}–{Math.min(start + 25, table.rows.length)} / {table.rows.length} dòng kết quả</span>{(pages > 1 || !interactive) && <div><Button variant="outline" type="button" className="secondary-button" disabled={current === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>Trước</Button><Button variant="outline" type="button" className="secondary-button" disabled={current + 1 >= pages} onClick={() => setPage(p => p + 1)}>Sau</Button></div>}</div>
     </>}
   </div>
 }

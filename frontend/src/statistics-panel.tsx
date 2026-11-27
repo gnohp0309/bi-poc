@@ -1,3 +1,4 @@
+import { Button, Card, Input, NativeSelect } from './components/ui/primitives'
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { ChatResult } from './chat-result'
@@ -40,22 +41,22 @@ export function StatisticsPanel({ datasetId, columns, canEdit }: { datasetId: st
     catch (e) { setError(e instanceof Error ? e.message : 'Không chạy được thống kê') }
     finally { setBusy(false) }
   }
-  return <section className="surface">
+  return <Card>
     <h2>Phân tích nâng cao</h2>
     <p>Engine SciPy tính từ dữ liệu thật của dataset, không gọi Gemini. Không tự lấy mẫu hoặc sửa dữ liệu.</p>
     <div className="form-grid">
-      <label>Phương pháp phân tích<select value={operation} onChange={e => { setOperation(e.target.value); setMethod(e.target.value === 'outlier' ? 'iqr' : 'pearson'); setResult(null); setFirst(numeric[0]?.name || columns[0]?.name || ''); setSecond(numeric[1]?.name || columns[1]?.name || '') }}>{operations.map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></label>
-      <label>{operation === 'paired_ttest' ? 'Cột trước' : 'Cột phân tích'}<select value={first} onChange={e => setFirst(e.target.value)}><option value="">Chọn cột</option>{choices.map(c => <option key={c.name} value={c.name}>{c.label} ({c.name})</option>)}</select></label>
-      {pair && <label>{operation === 'paired_ttest' ? 'Cột sau' : 'Cột thứ hai'}<select value={second} onChange={e => setSecond(e.target.value)}><option value="">Chọn cột</option>{choices.map(c => <option key={c.name} value={c.name}>{c.label} ({c.name})</option>)}</select></label>}
-      {grouped && <><label>Cột phân nhóm<select value={group} onChange={e => setGroup(e.target.value)}><option value="">Chọn cột</option>{columns.map(c => <option key={c.name} value={c.name}>{c.label} ({c.name})</option>)}</select></label><label>Nhóm cần so sánh tùy chọn<input value={groups} onChange={e => setGroups(e.target.value)} placeholder="Ví dụ: A, B; để trống dùng mọi nhóm" /></label></>}
-      {operation === 'correlation' && <label>Loại tương quan<select value={method} onChange={e => setMethod(e.target.value)}><option value="pearson">Pearson</option><option value="spearman">Spearman</option></select></label>}
-      {operation === 'outlier' && <label>Phương pháp ngoại lệ<select value={method} onChange={e => setMethod(e.target.value)}><option value="iqr">IQR</option><option value="zscore">Z-score</option></select></label>}
-      {!['descriptive', 'correlation', 'outlier'].includes(operation) && <label>Mức ý nghĩa alpha<input type="number" min="0.01" max="0.1" step="0.01" value={alpha} onChange={e => setAlpha(e.target.value)} /></label>}
+      <label>Phương pháp phân tích<NativeSelect value={operation} onChange={e => { setOperation(e.target.value); setMethod(e.target.value === 'outlier' ? 'iqr' : 'pearson'); setResult(null); setFirst(numeric[0]?.name || columns[0]?.name || ''); setSecond(numeric[1]?.name || columns[1]?.name || '') }}>{operations.map(([v, label]) => <option key={v} value={v}>{label}</option>)}</NativeSelect></label>
+      <label>{operation === 'paired_ttest' ? 'Cột trước' : 'Cột phân tích'}<NativeSelect value={first} onChange={e => setFirst(e.target.value)}><option value="">Chọn cột</option>{choices.map(c => <option key={c.name} value={c.name}>{c.label} ({c.name})</option>)}</NativeSelect></label>
+      {pair && <label>{operation === 'paired_ttest' ? 'Cột sau' : 'Cột thứ hai'}<NativeSelect value={second} onChange={e => setSecond(e.target.value)}><option value="">Chọn cột</option>{choices.map(c => <option key={c.name} value={c.name}>{c.label} ({c.name})</option>)}</NativeSelect></label>}
+      {grouped && <><label>Cột phân nhóm<NativeSelect value={group} onChange={e => setGroup(e.target.value)}><option value="">Chọn cột</option>{columns.map(c => <option key={c.name} value={c.name}>{c.label} ({c.name})</option>)}</NativeSelect></label><label>Nhóm cần so sánh tùy chọn<Input value={groups} onChange={e => setGroups(e.target.value)} placeholder="Ví dụ: A, B; để trống dùng mọi nhóm" /></label></>}
+      {operation === 'correlation' && <label>Loại tương quan<NativeSelect value={method} onChange={e => setMethod(e.target.value)}><option value="pearson">Pearson</option><option value="spearman">Spearman</option></NativeSelect></label>}
+      {operation === 'outlier' && <label>Phương pháp ngoại lệ<NativeSelect value={method} onChange={e => setMethod(e.target.value)}><option value="iqr">IQR</option><option value="zscore">Z-score</option></NativeSelect></label>}
+      {!['descriptive', 'correlation', 'outlier'].includes(operation) && <label>Mức ý nghĩa alpha<Input type="number" min="0.01" max="0.1" step="0.01" value={alpha} onChange={e => setAlpha(e.target.value)} /></label>}
     </div>
     <p className="hint">T-test độc lập dùng Welch. Paired T-test cần mỗi dòng là cùng một đối tượng trước/sau. Tính độc lập không được tự suy ra từ dữ liệu. Shapiro–Wilk giới hạn 3–5000 quan sát.</p>
-    <button className="primary-button" disabled={busy || !canEdit || !first || (pair && !second) || (grouped && !group)} onClick={run}>{busy ? 'Đang chạy engine thống kê…' : 'Chạy phân tích thống kê'}</button>
+    <Button className="primary-button" disabled={busy || !canEdit || !first || (pair && !second) || (grouped && !group)} onClick={run}>{busy ? 'Đang chạy engine thống kê…' : 'Chạy phân tích thống kê'}</Button>
     {!canEdit && <p>Viewer chỉ xem báo cáo; cần Analyst hoặc Admin để chạy phân tích.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
     {result !== null && <ChatResult metadataJson={JSON.stringify({ analysis_result: result })} content="" openDashboard={() => {}} />}
-  </section>
+  </Card>
 }

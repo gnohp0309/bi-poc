@@ -11,13 +11,13 @@ const library = createLibrary({
 })
 
 const theme = {
-  intelligentFont: '"DM Sans", Arial, sans-serif',
-  intelligentChart1: '#446c5b',
-  intelligentChart2: '#9bb4a5',
-  intelligentChart3: '#cfb889',
-  intelligentChart4: '#899db1',
-  intelligentChart5: '#b99182',
-  intelligentChart6: '#a69ab3',
+  intelligentFont: '"Inter Variable", Inter, system-ui, sans-serif',
+  intelligentChart1: '#00866e',
+  intelligentChart2: '#53b8a5',
+  intelligentChart3: '#87c8bd',
+  intelligentChart4: '#5486ad',
+  intelligentChart5: '#d8a85b',
+  intelligentChart6: '#8b7da8',
 }
 
 type RenderProps = { program: string; fallback: ReactNode }

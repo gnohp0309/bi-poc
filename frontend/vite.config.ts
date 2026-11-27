@@ -1,12 +1,14 @@
 import { defineConfig } from 'vite'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
+import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
 // The pinned OpenUI package exposes only a barrel, which loads the demo's entire icon registry.
 const intelligentUiDist = dirname(require.resolve('@openuidev/intelligent-ui-library')).replace(/\\/g, '/')
 
 export default defineConfig({
+  plugins: [tailwindcss()],
   resolve: {
     alias: [{ find: /^@openuidev\/intelligent-ui-library\/dist\//, replacement: intelligentUiDist + '/' }],
   },

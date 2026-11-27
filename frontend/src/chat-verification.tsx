@@ -1,4 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { Alert, Badge, Button, SurfaceDialog } from './components/ui/primitives'
+import { useRef, useState } from 'react'
+import { ShieldCheck } from 'lucide-react'
 import { api } from './api'
 import { formatChatNumber } from './chat-result-model'
 
@@ -27,6 +29,7 @@ const shortLabels = {
   scope_mismatch: 'Sai phạm vi',
   insufficient: 'Chưa đủ căn cứ',
 }
+const tones = { match: 'positive', value_mismatch: 'danger', scope_mismatch: 'warning', insufficient: 'neutral' } as const
 const aggregates: Record<string, string> = { sum: 'Tổng', avg: 'Trung bình', count: 'Đếm' }
 const operators: Record<string, string> = { eq: '=', gte: '≥', gt: '>', lte: '≤', lt: '<', ne: '≠', is_null: 'là NULL', is_not_null: 'khác NULL' }
 
@@ -45,21 +48,6 @@ export function ChatVerification({ conversationId, messageId, dashboard }: {
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDialogElement>(null)
-  const titleId = useId()
-
-  useEffect(() => {
-    if (!open) return
-    const dialog = panel.current
-    dialog?.showModal()
-    return () => dialog?.close()
-  }, [open])
-
-  function closePanel() {
-    panel.current?.close()
-    setOpen(false)
-    trigger.current?.focus({ preventScroll: true })
-  }
 
   async function verify() {
     setPending(true)
@@ -75,29 +63,21 @@ export function ChatVerification({ conversationId, messageId, dashboard }: {
   }
 
   return <div className="chat-verification-action">
-    <button type="button" className="chat-verify-button" ref={trigger} aria-haspopup="dialog"
+    <Button variant="outline" size="sm" type="button" className="chat-verify-button" ref={trigger} aria-haspopup="dialog"
       onClick={() => { setOpen(true); if (!pending) void verify() }}>
+      <ShieldCheck size={15} aria-hidden="true" />
       {dashboard ? 'Kiểm chứng KPI' : 'Kiểm chứng'}
-    </button>
-    {result && <span className={`chat-verify-status ${result.status}`}>{shortLabels[result.status]}</span>}
-    {open && <dialog ref={panel} className="chat-verification-panel" aria-labelledby={titleId}
-      onCancel={event => { event.preventDefault(); closePanel() }}
-      onClick={event => { if (event.target === event.currentTarget) closePanel() }}>
-      <div className="chat-verification-panel-inner">
-        <header className="chat-verification-panel-header">
-          <h2 id={titleId}>{dashboard ? 'Kiểm chứng KPI hiện tại' : 'Kiểm chứng câu trả lời'}</h2>
-          <button type="button" className="text-link" onClick={closePanel}>Đóng</button>
-        </header>
-        <div className="chat-verification-panel-body">
+    </Button>
+    {result && <Badge tone={tones[result.status]}>{shortLabels[result.status]}</Badge>}
+    {open && <SurfaceDialog sheet className="verification-sheet" returnFocus={trigger}
+      title={dashboard ? 'Kiểm chứng KPI hiện tại' : 'Kiểm chứng câu trả lời'} onClose={() => setOpen(false)}>
+        <div className="verification-body">
           <div role="status">
             {pending && <p>Đang tính lại từ dữ liệu…</p>}
-            {error && <p className="chat-result-warning">{error}</p>}
-            {result && <>
-              <span className={`chat-verify-status ${result.status}`}>{labels[result.status]}</span>
-              <p className="chat-verify-reason">{result.reason}</p>
-            </>}
+            {error && <Alert tone="danger">{error}</Alert>}
+            {result && <Alert tone={tones[result.status]}><strong>{labels[result.status]}</strong><p>{result.reason}</p></Alert>}
           </div>
-          {error && <button type="button" className="secondary-button" onClick={verify}>Thử lại</button>}
+          {error && <Button variant="outline" type="button" className="secondary-button" onClick={verify}>Thử lại</Button>}
           {result && <>
             {result.dataset && <p className="chat-verify-source">Dữ liệu · {result.dataset}</p>}
             {(result.answerValue !== null || result.computedValue !== null) && <dl className="chat-verify-values">
@@ -111,7 +91,6 @@ export function ChatVerification({ conversationId, messageId, dashboard }: {
             </dl>}
           </>}
         </div>
-      </div>
-    </dialog>}
+    </SurfaceDialog>}
   </div>
 }

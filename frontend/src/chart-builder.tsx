@@ -1,3 +1,5 @@
+import { Badge, Button, Card, Input, NativeSelect } from './components/ui/primitives'
+import { ChartColumn, PanelRight, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Chart, ChartData, ChartType, Dataset, ChartDefinition } from './api'
@@ -99,25 +101,39 @@ export function ChartsPage({ datasets, charts, done, canEdit = true, editSpec, d
     try { await api(`/charts/${item.id}`, 'DELETE'); done('Đã xóa biểu đồ.') } catch (e) { setStatus((e as Error).message) }
   }
   const options = (items: typeof columns) => items.map(c => <option key={c.name} value={c.name}>{c.label} ({c.name}) · {c.type}</option>)
-  return <div className="stack"><div className="two-column">
-    <section className="surface"><SectionTitle label="Cấu hình biểu đồ" />
+  const workspace = !editSpec && !dashboardId && !onCreated
+  return <div className="stack"><div className={workspace ? 'chart-workbench' : 'two-column'}>
+    <Card><SectionTitle label="Cấu hình biểu đồ" icon={SlidersHorizontal} />
       <fieldset disabled={busy || loading} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><div className="form-grid">
-        <label className="wide">Dataset<select disabled={!!editSpec} value={datasetId} onChange={e => setDatasetId(e.target.value)}><option value="">Chọn dataset</option>{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-        <label className="wide">Tên biểu đồ<input autoFocus={!!editSpec} value={name} maxLength={120} onChange={e => setName(e.target.value)} /></label>
-        <label className="wide">Dạng biểu đồ<select value={chartType} onChange={e => { setChartType(e.target.value as ChartType); setDimension(''); setMetric(''); setTimeGrain(''); setStatus('') }}>{types.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-        {hasDimension && <label>{chartType === 'scatter' ? 'Trục X (số)' : 'Chiều dữ liệu / trục X'}<select value={dimension} onChange={e => setDimension(e.target.value)}><option value="">Chọn cột</option>{options(dimensions)}</select>{!loading && !dimensions.length && <span>Không có cột đúng kiểu.</span>}</label>}
-        {hasAggregate && <label>Phép tổng hợp<select value={aggregate} onChange={e => { setAggregate(e.target.value as typeof aggregate); setMetric('') }}><option value="sum">Tổng</option><option value="count">Đếm</option><option value="avg">Trung bình</option></select></label>}
-        {chartType !== 'heatmap' && <label>{chartType === 'scatter' ? 'Trục Y (số)' : chartType === 'histogram' ? 'Cột số cần phân phối' : 'Cột chỉ số'}<select value={metric} onChange={e => setMetric(e.target.value)}><option value="">Chọn cột</option>{allowStar && <option value="*">* · Số dòng</option>}{options(metricChoices)}</select></label>}
-        {(stacked || chartType === 'line') && columns.find(c => c.name === dimension)?.kind === 'date' && <label>Nhóm thời gian<select value={timeGrain} onChange={e => setTimeGrain(e.target.value)}><option value="">Giá trị gốc</option><option value="month">Theo tháng (UTC)</option></select></label>}
-        {stacked && <label>Nhóm chuỗi (màu)<select value={seriesDimension} onChange={e => setSeriesDimension(e.target.value)}><option value="">Chọn cột</option>{options(scalar)}</select></label>}
-        {chartType === 'histogram' && <label>Số khoảng (2–50)<input type="number" min={2} max={50} step={1} value={binCount} onChange={e => setBinCount(Number(e.target.value))} /></label>}
-        {chartType === 'heatmap' && <label className="wide">Các cột số (chọn 2–8 cột)<select multiple size={Math.min(8, Math.max(3, numbers.length))} value={numericColumns} onChange={e => setNumericColumns(Array.from(e.target.selectedOptions).map(o => o.value))}>{options(numbers)}</select><span>Giữ Ctrl/Cmd để chọn nhiều cột. Cần ít nhất hai cột số.</span></label>}
-        {chartType === 'map' && <><label>Vĩ độ<select value={latitude} onChange={e => setLatitude(e.target.value)}><option value="">Chọn cột</option>{options(numbers)}</select></label><label>Kinh độ<select value={longitude} onChange={e => setLongitude(e.target.value)}><option value="">Chọn cột</option>{options(numbers)}</select></label><label className="wide">Nhãn địa điểm (tùy chọn)<select value={labelColumn} onChange={e => setLabelColumn(e.target.value)}><option value="">Không có</option>{options(scalar)}</select></label><p className="chart-field-note wide">Cần cột tọa độ thực; tên vùng đơn lẻ không tự chuyển thành vị trí.</p></>}
+        <label className="wide">Dataset<NativeSelect disabled={!!editSpec} value={datasetId} onChange={e => setDatasetId(e.target.value)}><option value="">Chọn dataset</option>{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</NativeSelect></label>
+        <label className="wide">Tên biểu đồ<Input autoFocus={!!editSpec} value={name} maxLength={120} onChange={e => setName(e.target.value)} /></label>
+        <label className="wide">Dạng biểu đồ<NativeSelect value={chartType} onChange={e => { setChartType(e.target.value as ChartType); setDimension(''); setMetric(''); setTimeGrain(''); setStatus('') }}>{types.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</NativeSelect></label>
+        {hasDimension && <label>{chartType === 'scatter' ? 'Trục X (số)' : 'Chiều dữ liệu / trục X'}<NativeSelect value={dimension} onChange={e => setDimension(e.target.value)}><option value="">Chọn cột</option>{options(dimensions)}</NativeSelect>{!loading && !dimensions.length && <span>Không có cột đúng kiểu.</span>}</label>}
+        {hasAggregate && <label>Phép tổng hợp<NativeSelect value={aggregate} onChange={e => { setAggregate(e.target.value as typeof aggregate); setMetric('') }}><option value="sum">Tổng</option><option value="count">Đếm</option><option value="avg">Trung bình</option></NativeSelect></label>}
+        {chartType !== 'heatmap' && <label>{chartType === 'scatter' ? 'Trục Y (số)' : chartType === 'histogram' ? 'Cột số cần phân phối' : 'Cột chỉ số'}<NativeSelect value={metric} onChange={e => setMetric(e.target.value)}><option value="">Chọn cột</option>{allowStar && <option value="*">* · Số dòng</option>}{options(metricChoices)}</NativeSelect></label>}
+        {(stacked || chartType === 'line') && columns.find(c => c.name === dimension)?.kind === 'date' && <label>Nhóm thời gian<NativeSelect value={timeGrain} onChange={e => setTimeGrain(e.target.value)}><option value="">Giá trị gốc</option><option value="month">Theo tháng (UTC)</option></NativeSelect></label>}
+        {stacked && <label>Nhóm chuỗi (màu)<NativeSelect value={seriesDimension} onChange={e => setSeriesDimension(e.target.value)}><option value="">Chọn cột</option>{options(scalar)}</NativeSelect></label>}
+        {chartType === 'histogram' && <label>Số khoảng (2–50)<Input type="number" min={2} max={50} step={1} value={binCount} onChange={e => setBinCount(Number(e.target.value))} /></label>}
+        {chartType === 'heatmap' && <label className="wide">Các cột số (chọn 2–8 cột)<NativeSelect multiple size={Math.min(8, Math.max(3, numbers.length))} value={numericColumns} onChange={e => setNumericColumns(Array.from(e.target.selectedOptions).map(o => o.value))}>{options(numbers)}</NativeSelect><span>Giữ Ctrl/Cmd để chọn nhiều cột. Cần ít nhất hai cột số.</span></label>}
+        {chartType === 'map' && <><label>Vĩ độ<NativeSelect value={latitude} onChange={e => setLatitude(e.target.value)}><option value="">Chọn cột</option>{options(numbers)}</NativeSelect></label><label>Kinh độ<NativeSelect value={longitude} onChange={e => setLongitude(e.target.value)}><option value="">Chọn cột</option>{options(numbers)}</NativeSelect></label><label className="wide">Nhãn địa điểm (tùy chọn)<NativeSelect value={labelColumn} onChange={e => setLabelColumn(e.target.value)}><option value="">Không có</option>{options(scalar)}</NativeSelect></label><p className="chart-field-note wide">Cần cột tọa độ thực; tên vùng đơn lẻ không tự chuyển thành vị trí.</p></>}
       </div></fieldset>
       {loading && <p role="status">Đang tải cấu trúc dataset…</p>}
       {status && <p className="form-error" role="alert">{status}</p>}
-      <div className="actions"><button className="secondary-button" disabled={!ready || busy} onClick={show}>{busy ? 'Đang xử lý…' : 'Xem trước'}</button><button className="primary-button" disabled={!ready || busy || !canEdit || !name.trim()} onClick={save}>{editSpec ? 'Lưu thay đổi' : 'Lưu biểu đồ'}</button>{onCancel && <button className="secondary-button" disabled={busy} onClick={onCancel}>Hủy</button>}</div>
-    </section>
-    <section className="surface chart-preview"><SectionTitle label="Xem trước trực quan" />{preview ? <ChartCanvas data={{ ...preview, name: name || 'Bản xem trước' }} /> : <Empty title="Chưa có bản xem" text="Chọn dạng biểu đồ và các cột phù hợp rồi bấm Xem trước." />}</section>
-  </div>{!editSpec && <section className="surface"><SectionTitle label="Biểu đồ đã lưu" count={charts.length} /><div className="item-grid">{charts.map(item => <div className="item-card" key={item.id}><span className="tag">{types.find(t => t[0] === item.chart_type)?.[1] || item.chart_type}</span><h3>{item.name}</h3><p>{item.dataset_name}</p><small>{item.metric && `${item.aggregate.toUpperCase()}(${item.metric})`}{item.dimension && ` · ${item.dimension}`}</small><button className="danger-link" disabled={!canEdit} onClick={() => remove(item)}>Xóa biểu đồ</button></div>)}</div></section>}</div>
+      <div className="actions"><Button variant="outline" className="secondary-button" disabled={!ready || busy} onClick={show}>{busy ? 'Đang xử lý…' : 'Xem trước'}</Button><Button className="primary-button" disabled={!ready || busy || !canEdit || !name.trim()} onClick={save}>{editSpec ? 'Lưu thay đổi' : 'Lưu biểu đồ'}</Button>{onCancel && <Button variant="outline" className="secondary-button" disabled={busy} onClick={onCancel}>Hủy</Button>}</div>
+    </Card>
+    <Card className="chart-preview"><SectionTitle label="Xem trước trực quan" icon={ChartColumn} />
+      {preview ? <><h3>{name || 'Bản xem trước'}</h3><ChartCanvas data={{ ...preview, name: name || 'Bản xem trước' }} /></> : <Empty title="Chưa có bản xem" text="Chọn dạng biểu đồ và các cột phù hợp rồi bấm Xem trước." />}
+    </Card>
+    {workspace && <Card className="chart-inspector">
+      <SectionTitle label="Analysis Inspector" icon={PanelRight} />
+      <Badge tone={preview ? 'positive' : 'neutral'}>{preview ? 'Đã có bản xem trước' : 'Đang cấu hình'}</Badge>
+      <dl className="inspector-fields">
+        <div><dt>Loại biểu đồ</dt><dd>{types.find(([key]) => key === chartType)?.[1]}</dd></div>
+        <div><dt>Dataset</dt><dd>{datasets.find(d => d.id === datasetId)?.name || 'Chưa chọn'}</dd></div>
+        {hasDimension && <div><dt>Trục X</dt><dd>{columns.find(c => c.name === dimension)?.label || 'Chưa chọn'}</dd></div>}
+        {(hasAggregate || metric) && <div><dt>Chỉ số</dt><dd>{effectiveAggregate.toUpperCase()} · {metric === '*' ? 'Số dòng' : columns.find(c => c.name === metric)?.label || 'Chưa chọn cột'}</dd></div>}
+        {preview && <div><dt>Số nhóm trong bản xem</dt><dd>{preview.rows.length.toLocaleString('vi-VN')}</dd></div>}
+      </dl>
+    </Card>}
+  </div>{!editSpec && <Card><SectionTitle label="Biểu đồ đã lưu" count={charts.length} /><div className="item-grid">{charts.map(item => <div className="item-card" key={item.id}><span className="tag">{types.find(t => t[0] === item.chart_type)?.[1] || item.chart_type}</span><h3>{item.name}</h3><p>{item.dataset_name}</p><small>{item.metric && `${item.aggregate.toUpperCase()}(${item.metric})`}{item.dimension && ` · ${item.dimension}`}</small><Button variant="destructive" size="sm" className="danger-link" disabled={!canEdit} onClick={() => remove(item)}>Xóa biểu đồ</Button></div>)}</div></Card>}</div>
 }

@@ -1,3 +1,5 @@
+import { Alert, Badge, Button, Card, Input, NativeSelect } from './components/ui/primitives'
+import { ChartColumn, LayoutTemplate, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from './api'
@@ -50,29 +52,39 @@ export function DashboardTemplateForm({ datasets, canEdit, created }: { datasets
     catch (e) { setError((e as Error).message); setPreview(null) }
     finally { setBusy(false) }
   }
-  return <section className="surface dashboard-template-form">
-    <SectionTitle label="Tạo dashboard từ mẫu" />
+  return <div className="dashboard-template-workbench">
+  <Card className="dashboard-template-form">
+    <SectionTitle label="Cấu hình dashboard" icon={LayoutTemplate} />
     <form onSubmit={submit}><fieldset disabled={!canEdit || busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="form-grid">
-        <label>Mẫu dashboard<select value={templateId} onChange={e => { invalidate(); setTemplateId(e.target.value); setName(templates.find(t => t.id === e.target.value)?.name || '') }} required><option value="">Chọn mẫu</option>{templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-        <label>Dataset<select value={datasetId} onChange={e => { invalidate(); setDatasetId(e.target.value) }} required><option value="">Chọn dataset</option>{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-        <label className="wide">Tên dashboard<input value={name} onChange={e => setName(e.target.value)} maxLength={120} required /></label>
+        <label>Mẫu dashboard<NativeSelect value={templateId} onChange={e => { invalidate(); setTemplateId(e.target.value); setName(templates.find(t => t.id === e.target.value)?.name || '') }} required><option value="">Chọn mẫu</option>{templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</NativeSelect></label>
+        <label>Dataset<NativeSelect value={datasetId} onChange={e => { invalidate(); setDatasetId(e.target.value) }} required><option value="">Chọn dataset</option>{datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</NativeSelect></label>
+        <label className="wide">Tên dashboard<Input value={name} onChange={e => setName(e.target.value)} maxLength={120} required /></label>
       </div>
-      {template && <><p className="muted">{template.description}</p><ul className="hint">{template.charts.map((c, i) => <li key={i}>{c.name} · {c.chartType} / {c.aggregate.toUpperCase()}</li>)}</ul></>}
+      {template && <Alert>{template.description}</Alert>}
       {loading && <p role="status">Đang tải cấu trúc dataset…</p>}
-      {datasetId && !loading && <><p className="hint">Cột được gợi ý khi tên và kiểu phù hợp duy nhất. Hãy xác nhận ý nghĩa từng trường; tên khác vẫn có thể chọn thủ công. Hệ thống không tự đổi tên hay sửa dữ liệu gốc.</p><div className="form-grid">{template?.fields.map(field => <label key={field.key}>{field.label} ({field.kind === 'date' ? 'ngày' : field.kind === 'number' ? 'số' : 'văn bản'})
-        <select value={mapping[field.key] || ''} onChange={e => { invalidate(); setMapping(m => ({ ...m, [field.key]: e.target.value })) }} required><option value="">Chọn cột</option>{columns.filter(c => c.kind === field.kind).map(c => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}</select>
+      {datasetId && !loading && <><h3 className="template-mapping-heading">Ánh xạ cột dữ liệu</h3><p className="hint">Cột được gợi ý khi tên và kiểu phù hợp duy nhất. Hãy xác nhận ý nghĩa từng trường; tên khác vẫn có thể chọn thủ công. Hệ thống không tự đổi tên hay sửa dữ liệu gốc.</p><div className="form-grid">{template?.fields.map(field => <label key={field.key}>{field.label} ({field.kind === 'date' ? 'ngày' : field.kind === 'number' ? 'số' : 'văn bản'})
+        <NativeSelect value={mapping[field.key] || ''} onChange={e => { invalidate(); setMapping(m => ({ ...m, [field.key]: e.target.value })) }} required><option value="">Chọn cột</option>{columns.filter(c => c.kind === field.kind).map(c => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}</NativeSelect>
         {fieldProblem(field, columns, mapping) && <span className="form-error">{fieldProblem(field, columns, mapping)}</span>}
       </label>)}</div></>}
       <p className="hint">Mỗi biểu đồ hiển thị tối đa 100 nhóm. Kiểm tra và xem trước dữ liệu thật trước khi tạo. Ngày/tháng dùng UTC với timestamp có múi giờ.</p>
-      <div className="actions"><button type="button" className="secondary-button" disabled={loading || checking || !datasetId || !template || problems.length > 0} onClick={check}>{checking ? 'Đang kiểm tra…' : 'Kiểm tra & xem trước'}</button><button className="primary-button" disabled={busy || loading || checking || !name.trim() || !datasetId || !preview?.eligible || problems.length > 0}>{busy ? 'Đang tạo dashboard…' : 'Tạo dashboard từ mẫu'}</button></div>
+      <div className="actions"><Button variant="outline" type="button" className="secondary-button" disabled={loading || checking || !datasetId || !template || problems.length > 0} onClick={check}>{checking ? 'Đang kiểm tra…' : 'Kiểm tra & xem trước'}</Button><Button className="primary-button" disabled={busy || loading || checking || !name.trim() || !datasetId || !preview?.eligible || problems.length > 0}>{busy ? 'Đang tạo dashboard…' : 'Tạo dashboard từ mẫu'}</Button></div>
     </fieldset></form>
     {!datasets.length && <p className="hint">Tạo dataset hoặc nhập CSV trước khi sử dụng mẫu.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
-    {preview && <div className="stack" style={{ marginTop: 18 }}><p role="status">{preview.eligible ? 'Ánh xạ hợp lệ. Xem số liệu, bố cục và các lưu ý trước khi tạo.' : 'Chưa thể tạo template với dữ liệu đã chọn.'}</p>
+    {preview && <div className="stack" style={{ marginTop: 18 }}><Alert role="status" tone={preview.eligible ? 'positive' : 'warning'}>{preview.eligible ? 'Ánh xạ hợp lệ. Xem số liệu, bố cục và các lưu ý trước khi tạo.' : 'Chưa thể tạo template với dữ liệu đã chọn.'}</Alert>
       {!!preview.issues.length && <ul className="form-error" role="alert">{preview.issues.map((p, i) => <li key={i}>{p.message}</li>)}</ul>}
-      {!!preview.warnings.length && <div className="surface"><strong>Lưu ý dữ liệu</strong><ul>{preview.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div>}
       {!!preview.charts.length && <DashboardGrid charts={preview.charts} />}
     </div>}
-  </section>
+  </Card>
+  {template && <aside className="stack template-inspector" aria-label="Thông tin mẫu">
+    {!!preview?.warnings.length && <Card><SectionTitle label="Lưu ý dữ liệu" icon={TriangleAlert} />
+      <Alert tone="warning"><ul>{preview.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></Alert></Card>}
+    <Card><SectionTitle label="Bố cục mẫu" icon={ChartColumn} />
+      <div className="template-chart-list">{template.charts.map((chart, i) => <div className="record" key={i}>
+        <strong>{chart.name}</strong><Badge>{chart.chartType} · {chart.aggregate.toUpperCase()}</Badge>
+      </div>)}</div>
+    </Card>
+  </aside>}
+  </div>
 }
